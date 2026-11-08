@@ -155,6 +155,12 @@ body.gate-open { overflow: hidden; }
   background: var(--accent); color: #fff; font-weight: 700;
 }
 .gate-none { color: var(--muted) !important; }
+.gate-link {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  margin: 4px 0 2px; padding: 12px; border-radius: 14px; border: 1px dashed var(--axis);
+  color: var(--accent); font-weight: 650; font-size: 14px; text-decoration: none;
+}
+.gate-link:hover { background: var(--accent-wash); }
 .gate-cancel {
   display: block; margin: 2px auto 0; padding: 8px 12px; border: 0; background: none; cursor: pointer;
   color: var(--accent); font-weight: 600;
@@ -286,8 +292,20 @@ svg text { font-family: inherit; }
 .zone-good { fill: var(--accent); fill-opacity: .08; }
 .zone-label { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; fill: var(--muted); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
 .lg-zone { width: 12px; height: 12px; border-radius: 3px; background: var(--accent); opacity: .3; }
-.dia-key { margin-bottom: 6px; }
-.dia-key b { color: var(--ink); }
+.dia-key { display: block; width: 100%; max-width: 420px; height: auto; margin: 0 auto 8px; }
+.dia-key .key-bg { fill: var(--surface-2); }
+.dia-key .key-zone { fill: var(--accent); fill-opacity: .14; }
+.dia-key .key-grid { stroke: var(--grid); stroke-width: 1; }
+.dia-key .key-diag { stroke: var(--axis); stroke-width: 1.2; }
+.dia-key .key-same { stroke: var(--muted); stroke-width: 1; opacity: .7; }
+.dia-key .key-best { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.dia-key .key-pt { fill: var(--surface); stroke: var(--ink-2); stroke-width: 2; }
+.dia-key .key-arrow { stroke: var(--ink-2); stroke-width: 2; }
+.dia-key .key-head { fill: var(--ink-2); }
+.dia-key .key-lbl { font-size: 11px; fill: var(--ink-2); }
+.dia-key .key-lbl.strong { fill: var(--ink); font-weight: 650; }
+.dia-key .key-note { font-size: 9.5px; fill: var(--muted); }
+.dia-key .key-note.in { font-size: 9.5px; fill: var(--ink-2); paint-order: stroke; stroke: var(--surface-2); stroke-width: 3px; }
 .chart-wrap.bleed { margin: 0 -16px; }
 .zoom-ctl { position: absolute; right: 8px; bottom: 30px; display: flex; flex-direction: column; gap: 6px; }
 .chart-wrap.bleed .zoom-ctl { right: 12px; }

@@ -50,7 +50,8 @@
     return { text: 'Live', cls: 'live' };
   }
 
-  /* Show the start screen; calls done(choice). opts.cancelable adds "Keep current". */
+  /* Show the start screen; calls done(choice). opts.cancelable adds "Keep current";
+     opts.link = { href, text } adds a link to the other page (it asks there too). */
   function ask(done, opts) {
     opts = opts || {};
     var prev = last();
@@ -105,6 +106,7 @@
               : '<small class="gate-none">No saved days yet. Every morning’s refresh saves the night before.</small>') +
           '</div>' +
           '<button type="button" class="gate-btn" data-mode="demo">' + opt('demo', 'Demo', 'Made-up numbers and players') + '</button>' +
+          (opts.link ? '<a class="gate-link" href="' + esc(opts.link.href) + '">' + esc(opts.link.text) + '</a>' : '') +
           (opts.cancelable ? '<button type="button" class="gate-cancel">Keep current</button>' : '');
         el.addEventListener('click', function (e) {
           var b = e.target.closest('[data-mode]');

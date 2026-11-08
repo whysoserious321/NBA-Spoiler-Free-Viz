@@ -30,10 +30,10 @@ is slow to update its season totals).
 
 - **Live, or up to a date.** Every page load starts with a short question: *Live*, *Up to a date*, or
   *Demo*. Pick the last game day you have watched and the whole app (ratings, records, leaders, odds,
-  odds trends and the 3P% page) shows only what was known the morning after it. See
-  [Live or up to a date](#live-or-up-to-a-date).
+  odds trends and the 3P% page) shows only what was known the morning after it. The start screen
+  also links straight to the spoiler-free 3P% page. See [Live or up to a date](#live-or-up-to-a-date).
 - **Net rating diamond.** Offensive vs. defensive rating rotated 45° so that *height is net rating*
-  (after Owen Phillips' "diamond plots" in The F5). Switch between raw and opponent-adjusted
+  (after Owen Phillips' "diamond plots" in The F5), with a small drawn key above it showing how to read it. Switch between raw and opponent-adjusted
   ratings and filter by conference; the view fits the teams on show and glides between states.
   Pinch, double-tap or use +/− to zoom. Logos keep their size, so a crowded middle spreads out.
 - **Ladder.** The same ratings as a ranked list: a ring for the raw net rating, a dot for the adjusted

@@ -229,7 +229,8 @@
     main.innerHTML = '<div class="skeleton" aria-hidden="true"><div></div><div></div><div></div><div></div></div>';
     load();
   }
-  function changeData() { NBAGate.ask(start, { cancelable: true }); }
+  var THREES_LINK = { href: '/threes', text: 'Go to the spoiler-free 3-point check \u2192' };
+  function changeData() { NBAGate.ask(start, { cancelable: true, link: THREES_LINK }); }
 
   function load() {
     fetch('/api/dashboard' + NBAGate.query(S.choice), { cache: 'no-cache' })
@@ -547,15 +548,12 @@
     });
     s += '</g></svg>';
     body.innerHTML =
-      '<div class="legend dia-key" aria-hidden="true"><span><b>↑</b> higher = better</span>' +
-      '<span><b>↗</b> better offense</span><span><b>↖</b> better defense</span>' +
-      '<span><i class="lg-zone"></i>above avg on both</span>' +
-      '<span><i class="lg-line" style="background:var(--axis);height:2px"></i>league avg</span></div>' +
+      diamondKey() +
       '<div class="chart-wrap' + (narrow ? ' bleed' : '') + '">' + s +
       '<div class="zoom-ctl"><button type="button" data-z="in" aria-label="Zoom in">+</button>' +
       '<button type="button" data-z="out" aria-label="Zoom out">−</button>' +
       '<button type="button" data-z="reset" aria-label="Fit all teams" hidden>↺</button></div></div>';
-    dia.svg = $('svg', body);
+    dia.svg = $('svg.diamond', body);
     dia.wrap = $('.chart-wrap', body);
     dia.fit = diaFit(S.mode);
     diaDecorate();
@@ -578,6 +576,40 @@
       });
     });
     bindDiamondGestures(svg);
+  }
+
+  /* A small drawn key: a mini diamond with four example teams, so the reading
+     "higher = better, left/right = where it comes from" is visible at a glance. */
+  function diamondKey() {
+    var cx = 170, cy = 86;                            // centre of the mini diamond
+    var s = '<svg class="dia-key" viewBox="0 0 340 172" role="img" aria-label="How to read the diamond: ' +
+      'higher means better overall; at the same height, further right means offense-led and further left defense-led; ' +
+      'the top zone is good at both ends, the bottom poor at both.">';
+    s += '<defs><clipPath id="kclip"><rect x="90" y="24" width="160" height="124" rx="10"/></clipPath></defs>';
+    s += '<rect class="key-bg" x="90" y="24" width="160" height="124" rx="10"/>';
+    s += '<g clip-path="url(#kclip)">' +
+      '<polygon class="key-zone" points="' + cx + ',' + cy + ' ' + (cx + 90) + ',' + (cy - 90) + ' ' + (cx - 90) + ',' + (cy - 90) + '"/>' +
+      [-28, 0, 28].map(function (y) { return '<line class="key-grid" x1="90" x2="250" y1="' + (cy + y) + '" y2="' + (cy + y) + '"/>'; }).join('') +
+      '<line class="key-diag" x1="' + (cx - 90) + '" y1="' + (cy - 90) + '" x2="' + (cx + 90) + '" y2="' + (cy + 90) + '"/>' +
+      '<line class="key-diag" x1="' + (cx + 90) + '" y1="' + (cy - 90) + '" x2="' + (cx - 90) + '" y2="' + (cy + 90) + '"/>' +
+      '<line class="key-same" x1="' + (cx - 48) + '" x2="' + (cx + 48) + '" y1="' + (cy - 14) + '" y2="' + (cy - 14) + '"/>' +
+      '<text class="key-note in" x="' + cx + '" y="' + (cy - 20) + '" text-anchor="middle">same height = equally good</text>' +
+      '</g>';
+    // four example teams: best, offense-led, defense-led, poor
+    s += '<circle class="key-best" cx="' + cx + '" cy="36" r="6"/>' +
+      '<circle class="key-pt" cx="' + (cx - 48) + '" cy="' + (cy - 14) + '" r="4.5"/>' +
+      '<circle class="key-pt" cx="' + (cx + 48) + '" cy="' + (cy - 14) + '" r="4.5"/>' +
+      '<circle class="key-pt" cx="' + cx + '" cy="136" r="4.5"/>';
+    s += '<text class="key-lbl strong" x="' + cx + '" y="15" text-anchor="middle">best: good at both ends</text>' +
+      '<text class="key-lbl" x="84" y="' + (cy - 10) + '" text-anchor="end">defense-led</text>' +
+      '<text class="key-lbl" x="256" y="' + (cy - 10) + '">offense-led</text>' +
+      '<text class="key-lbl" x="' + cx + '" y="165" text-anchor="middle">poor at both ends</text>';
+    // "better overall" arrow on the far left, diagonals note bottom right
+    s += '<line class="key-arrow" x1="9" y1="150" x2="9" y2="34"/><path class="key-head" d="M3.5 41 L9 30 L14.5 41 Z"/>' +
+      '<text class="key-lbl strong" x="16" y="38">better</text><text class="key-lbl" x="16" y="51">overall</text>' +
+      '<text class="key-note" x="256" y="122">diagonals =</text>' +
+      '<text class="key-note" x="256" y="134">league average</text>';
+    return s + '</svg>';
   }
 
   // labels, dimming and the raw/adjusted class: everything that is not geometry
@@ -1229,5 +1261,5 @@
 
   // Ask first (unless the URL already says live / a date / demo), then load.
   var fromUrl = NBAGate.fromUrl();
-  if (fromUrl) start(fromUrl); else NBAGate.ask(start);
+  if (fromUrl) start(fromUrl); else NBAGate.ask(start, { link: THREES_LINK });
 })();
