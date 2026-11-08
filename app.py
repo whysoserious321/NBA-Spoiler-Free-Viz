@@ -148,9 +148,76 @@ def no_cache_html(resp):
 
 @app.route('/')
 def index():
-    v = int(max(os.path.getmtime(os.path.join(BASE_DIR, 'static', f))
-                for f in ('app.js', 'app.css')))
-    return render_template('index.html', v=v)
+    return render_template('index.html', v=_asset_version())
+
+
+def _asset_version():
+    return int(max(os.path.getmtime(os.path.join(BASE_DIR, 'static', f))
+                   for f in ('app.js', 'app.css', 'tpchart.js', 'threes.js')))
+
+
+@app.route('/threes')
+def threes_page():
+    """Stand-alone 3-point page. It loads /api/threes only, which carries no
+    records, ratings, standings or odds, so it is safe to open mid-game."""
+    return render_template('threes.html', v=_asset_version())
+
+
+_json_cache = {}
+
+
+def _load_json(path):
+    mtime = os.path.getmtime(path)
+    hit = _json_cache.get(path)
+    if not hit or hit[0] != mtime:
+        hit = (mtime, scrape.read_json(path))
+        _json_cache[path] = hit
+    return hit[1]
+
+
+DEMO_GAMES = [('BOS', 'NYK'), ('GSW', 'LAL'), ('PHX', 'DEN'), ('MIA', 'ORL')]
+
+
+def _todays_games():
+    """Today's matchups (US date) from the cached scoreboard: team pairs only, never scores."""
+    today = datetime.now(scrape.US_EAST).date()
+    day = scrape.read_json(os.path.join(scrape.DAY_DIR, today.strftime('%Y%m%d') + '.json')) or {}
+    games = []
+    for ev in day.get('events', []):
+        if ev.get('away') and ev.get('home'):
+            games.append({'away': ev['away']['abbr'], 'home': ev['home']['abbr']})
+    return today.isoformat(), games
+
+
+@app.route('/api/threes')
+def api_threes():
+    demo_mode = request.args.get('demo') == '1'
+    path = DEMO_FILE if demo_mode else scrape.DASHBOARD
+    if demo_mode and not os.path.exists(DEMO_FILE):
+        import demo
+        demo.write()
+    if not os.path.exists(path):
+        return jsonify({'error': 'No data yet - the first refresh is still running.'}), 503
+    d = _load_json(path)
+    players = d.get('players', {})
+    teams = []
+    for t in sorted(d['teams'], key=lambda t: t['name']):
+        roster = [players[pid] for pid in t.get('roster', []) if pid in players]
+        teams.append({
+            'abbr': t['abbr'], 'name': t['name'], 'nick': t.get('nick'),
+            'tp': t.get('tp'), 'tpa_g': t.get('tpa_g'),
+            'players': [{'name': p['name'], 'short': p.get('short'), 'pos': p.get('pos'),
+                         'tpm': p['tpm'], 'tpa': p['tpa']} for p in roster],
+        })
+    if demo_mode:
+        games_date, games = None, [{'away': a, 'home': h} for a, h in DEMO_GAMES]
+    else:
+        games_date, games = _todays_games()
+    return jsonify({
+        'demo': demo_mode, 'season': d.get('season'), 'generated': d.get('generated'),
+        'league_tp': (d.get('league') or {}).get('tp'),
+        'games_date': games_date, 'games': games, 'teams': teams,
+    })
 
 
 @app.route('/api/dashboard')

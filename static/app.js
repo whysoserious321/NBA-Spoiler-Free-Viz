@@ -7,7 +7,7 @@
   var S = {
     data: null, teams: {}, players: {}, ranks: {},
     demo: false, tab: 'ratings',
-    view: null, mode: 'adj', conf: 'all', stat: 0,
+    view: 'diamond', mode: 'raw', conf: 'all', stat: 0,
     range: { mvp: 'all', title: '1m' },
     sel: null, width: window.innerWidth,
   };
@@ -197,8 +197,6 @@
       try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) { /* ignore */ }
     }
     S.demo = store.get('nbaviz-demo') === '1';
-    var v = store.get('nbaviz-view');
-    if (v === 'ladder' || v === 'diamond') S.view = v;
   })();
 
   function load() {
@@ -305,11 +303,12 @@
   function onControl(ctl, val, btn) {
     pressed(btn.parentNode, btn);
     if (ctl === 'view') {
-      S.view = val; store.set('nbaviz-view', val);
+      S.view = val;
       drawRatingsBody();
     } else if (ctl === 'mode') {
+      var prevMode = S.mode;
       S.mode = val;
-      if (S.view === 'ladder') updateLadder(true); else updateDiamond();
+      if (S.view === 'ladder') updateLadder(true); else updateDiamond(prevMode);
     } else if (ctl === 'conf') {
       S.conf = val;
       if (S.view === 'ladder') updateLadder(false); else updateDiamond();
@@ -330,14 +329,13 @@
   }
 
   function renderRatings(v) {
-    if (!S.view) S.view = window.innerWidth >= 640 ? 'diamond' : 'ladder';
     v.innerHTML =
       '<section class="card">' +
       '<div class="card-h"><p class="kicker">Team ratings</p><h2>Net rating</h2>' +
       '<p>Points per 100 possessions, offense minus defense. <b>Adjusted</b> takes out the strength of the opponents each team has played.</p></div>' +
       '<div class="controls">' +
       segBtns('view', [['ladder', 'Ladder'], ['diamond', 'Diamond']], S.view) +
-      segBtns('mode', [['adj', 'Adjusted'], ['raw', 'Raw']], S.mode) +
+      segBtns('mode', [['raw', 'Raw'], ['adj', 'Adjusted']], S.mode) +
       '</div>' +
       '<div class="chips" role="group">' + [['all', 'All teams'], ['East', 'East'], ['West', 'West']].map(function (c) {
         return '<button type="button" class="chip" data-conf="' + c[0] + '" aria-pressed="' + (S.conf === c[0]) + '">' + c[1] + '</button>';
@@ -356,6 +354,7 @@
         'O / D = offensive and defensive rating (points scored and allowed per 100 possessions; lower D is better). Tap a team for details.';
     } else {
       drawDiamond(body);
+      drawRatingsFootOnly(foot);
     }
   }
 
@@ -436,62 +435,82 @@
   }
 
   /* Diamond: ORtg vs DRtg rotated 45 degrees so height = net rating.
-     Pinch, double-tap, ctrl+wheel or the +/- buttons zoom; logos keep their
-     size while zooming, so the crowded middle spreads out. Drag to pan. */
+     The view is fitted to the teams on show (raw/adjusted, conference) and
+     animates when that changes. Pinch, double-tap, ctrl+wheel or +/- zoom on
+     top of the fit; logos keep their size, so crowded teams spread out. */
   var dia = null;
-  var ZMAX = 6;
+  var ZMAX = 6, R2 = Math.SQRT2;
+
+  function diaPos(t, m) {
+    var lg = S.data.league.rtg;
+    var o = (m === 'adj' ? t.ortg_a : t.ortg) - lg, dd = lg - (m === 'adj' ? t.drtg_a : t.drtg);
+    return { u: (o - dd) / R2, v: (o + dd) / R2 };
+  }
+  function diaBox(mode) {
+    var ts = S.data.teams.filter(visible);
+    var b = { u0: Infinity, u1: -Infinity, v0: Infinity, v1: -Infinity };
+    (ts.length ? ts : S.data.teams).forEach(function (t) {
+      var p = diaPos(t, mode);
+      b.u0 = Math.min(b.u0, p.u); b.u1 = Math.max(b.u1, p.u); b.v0 = Math.min(b.v0, p.v); b.v1 = Math.max(b.v1, p.v);
+    });
+    b.du = Math.max(b.u1 - b.u0, 2); b.dv = Math.max(b.v1 - b.v0, 2);
+    return b;
+  }
+  // where logo centres may go: room for tick labels on the left and a name label above
+  function diaArea() {
+    return { x0: dia.gutter + dia.L / 2 + 6, x1: dia.W - dia.L / 2 - 8, y0: dia.top + dia.L / 2 + 18, y1: dia.bot - dia.L / 2 - 16 };
+  }
+  function diaFit(mode) {
+    var b = diaBox(mode), a = diaArea();
+    var k = Math.min((a.x1 - a.x0) / b.du, (a.y1 - a.y0) / b.dv);
+    return { ox: (a.x0 + a.x1) / 2 - (b.u0 + b.u1) / 2 * k, oy: (a.y0 + a.y1) / 2 + (b.v0 + b.v1) / 2 * k, k: k };
+  }
+  function diaEff() {
+    var f = dia.fit, z = dia.z;
+    return { ax: f.ox * z.s + z.tx, ay: f.oy * z.s + z.ty, K: f.k * z.s };
+  }
+
   function drawDiamond(body) {
     var narrow = window.innerWidth < 640;
-    var W = avail(body) + (narrow ? 32 : 0), lg = S.data.league.rtg, teams = S.data.teams;
-    function pos(t, m) {
-      var o = (m === 'adj' ? t.ortg_a : t.ortg) - lg, dd = lg - (m === 'adj' ? t.drtg_a : t.drtg);
-      return { u: (o - dd) / Math.SQRT2, v: (o + dd) / Math.SQRT2 };
-    }
-    var umax = 0, vmax = 0;
-    teams.forEach(function (t) {
-      ['adj', 'raw'].forEach(function (m) {
-        var p = pos(t, m);
-        umax = Math.max(umax, Math.abs(p.u)); vmax = Math.max(vmax, Math.abs(p.v));
-      });
-    });
-    umax += 0.6; vmax += 0.6;
-    var L = narrow ? 24 : 32;                                      // logo size, constant while zooming
-    var gutter = 30, padTop = 26, padBot = 24;
-    var k = (W - gutter - 8 - L) / (2 * umax);
-    var H = 2 * vmax * k + padTop + padBot + L;
-    var maxH = narrow ? Math.max(420, Math.min(W * 1.5, window.innerHeight * 0.74)) : Math.max(420, Math.min(W * 1.05, 760));
-    if (H > maxH) { k = (maxH - padTop - padBot - L) / (2 * vmax); H = maxH; }
-    var cx = gutter + (W - gutter) / 2, cy = padTop + L / 2 + vmax * k;
-    var top = 8, bot = H - 8;
+    var W = avail(body) + (narrow ? 32 : 0), L = narrow ? 24 : 32;
+    if (dia && dia.raf) cancelAnimationFrame(dia.raf);
+    dia = { W: W, L: L, gutter: 30, top: 8, z: { s: 1, tx: 0, ty: 0 }, raf: 0 };
+    // height follows the shape of the current distribution, within sensible bounds
+    var b = diaBox(S.mode);
+    var kW = (W - dia.gutter - L - 14) / b.du;
+    var minH = narrow ? 340 : 380;
+    var maxH = narrow ? Math.max(minH, Math.min(W * 1.5, window.innerHeight * 0.74)) : Math.max(minH, Math.min(W * 1.05, 760));
+    var H = Math.round(clamp(b.dv * kW + L + 50, minH, maxH));
+    dia.H = H; dia.bot = H - 8;
 
-    var s = svgEl(W, H, 'Diamond chart of offensive versus defensive rating for all 30 teams', 'diamond');
-    s += '<defs><clipPath id="dclip"><rect x="' + (gutter - 2) + '" y="' + top + '" width="' + (W - gutter + 2) + '" height="' + (bot - top) + '"/></clipPath></defs>';
-    s += '<g class="d-grid" clip-path="url(#dclip)"></g><g class="d-ticks"></g>';
-    s += '<text class="ax-strong corner" x="' + (W - 4) + '" y="' + (top + 4) + '" text-anchor="end" dominant-baseline="hanging">better offense ↗</text>';
-    s += '<text class="ax-strong corner" x="' + (gutter + 2) + '" y="' + (top + 4) + '" dominant-baseline="hanging">↖ better defense</text>';
-    s += '<text class="ax-label corner" x="' + (W - 4) + '" y="' + (bot - 4) + '" text-anchor="end">worse defense ↘</text>';
-    s += '<text class="ax-label corner" x="' + (gutter + 2) + '" y="' + (bot - 4) + '">↙ worse offense</text>';
+    var s = svgEl(W, H, 'Diamond chart of offensive versus defensive rating', 'diamond');
+    s += '<defs><clipPath id="dclip"><rect x="' + (dia.gutter - 2) + '" y="' + dia.top + '" width="' + (W - dia.gutter + 2) + '" height="' + (dia.bot - dia.top) + '"/></clipPath></defs>';
+    s += '<g class="d-grid" clip-path="url(#dclip)"></g><g class="d-ticks"></g><g class="d-zones"></g>';
     s += '<g class="d-plot" clip-path="url(#dclip)">';
-    teams.forEach(function (t) {
+    S.data.teams.forEach(function (t) {
       s += '<g class="ghost" data-team="' + t.abbr + '"><line/><circle r="3.5"/></g>';
     });
-    teams.slice().sort(function (p, q) { return p.nrtg_a - q.nrtg_a; }).forEach(function (t) {
+    S.data.teams.slice().sort(function (p, q) { return p.nrtg_a - q.nrtg_a; }).forEach(function (t) {
       s += '<g class="pt" data-team="' + t.abbr + '" tabindex="0" role="button" aria-label="' + esc(t.name) + '">' +
         '<circle class="halo" r="' + (L / 2 + 1) + '" opacity=".85"/><circle class="sel-ring" r="' + (L / 2 + 3) + '"/>' +
         '<image href="' + logoSrc(t.abbr) + '" x="' + (-L / 2) + '" y="' + (-L / 2) + '" width="' + L + '" height="' + L + '"/>' +
         '<text class="pt-label" y="' + (-L / 2 - 6) + '" text-anchor="middle"></text></g>';
     });
     s += '</g></svg>';
-    body.innerHTML = '<div class="chart-wrap' + (narrow ? ' bleed' : '') + '">' + s +
+    body.innerHTML =
+      '<div class="legend dia-key" aria-hidden="true"><span><b>↑</b> higher = better</span>' +
+      '<span><b>↗</b> better offense</span><span><b>↖</b> better defense</span>' +
+      '<span><i class="lg-zone"></i>above avg on both</span>' +
+      '<span><i class="lg-line" style="background:var(--axis);height:2px"></i>league avg</span></div>' +
+      '<div class="chart-wrap' + (narrow ? ' bleed' : '') + '">' + s +
       '<div class="zoom-ctl"><button type="button" data-z="in" aria-label="Zoom in">+</button>' +
       '<button type="button" data-z="out" aria-label="Zoom out">−</button>' +
-      '<button type="button" data-z="reset" aria-label="Reset zoom" hidden>↺</button></div></div>';
-    dia = {
-      svg: $('svg', body), wrap: $('.chart-wrap', body), W: W, H: H, top: top, bot: bot, gutter: gutter, k: k, cy: cy,
-      X: function (u) { return cx + u * k; }, Y: function (v) { return cy - v * k; },
-      pos: pos, z: { s: 1, tx: 0, ty: 0 },
-    };
-    updateDiamond();
+      '<button type="button" data-z="reset" aria-label="Fit all teams" hidden>↺</button></div></div>';
+    dia.svg = $('svg', body);
+    dia.wrap = $('.chart-wrap', body);
+    dia.fit = diaFit(S.mode);
+    diaDecorate();
+    diaRender(diaEff(), function (t) { return diaPos(t, S.mode); });
 
     var svg = dia.svg;
     $$('.pt', svg).forEach(function (g) {
@@ -501,30 +520,87 @@
       g.addEventListener('click', function () { setSelection(abbr); openTeam(abbr); });
       g.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelection(abbr); openTeam(abbr); } });
     });
-    $$('.zoom-ctl button', dia.wrap).forEach(function (b) {
-      b.addEventListener('click', function () {
-        var mid = [(dia.gutter + dia.W) / 2, (top + bot) / 2];
-        if (b.dataset.z === 'in') zoomAt(mid, 1.6);
-        else if (b.dataset.z === 'out') zoomAt(mid, 1 / 1.6);
+    $$('.zoom-ctl button', dia.wrap).forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var mid = [(dia.gutter + dia.W) / 2, (dia.top + dia.bot) / 2];
+        if (btn.dataset.z === 'in') zoomAt(mid, 1.6);
+        else if (btn.dataset.z === 'out') zoomAt(mid, 1 / 1.6);
         else setZoom(1, 0, 0);
       });
     });
     bindDiamondGestures(svg);
   }
 
-  // screen position of a point in rating space, after zoom
-  function dP(u, v) { var z = dia.z; return [dia.X(u) * z.s + z.tx, dia.Y(v) * z.s + z.ty]; }
+  // labels, dimming and the raw/adjusted class: everything that is not geometry
+  function diaDecorate() {
+    dia.svg.classList.toggle('mode-raw', S.mode === 'raw');
+    $$('.pt', dia.svg).forEach(function (g) {
+      var t = S.teams[g.getAttribute('data-team')];
+      g.style.opacity = visible(t) ? '' : '0.12';
+      g.style.pointerEvents = visible(t) ? '' : 'none';
+      $('.pt-label', g).textContent = t.abbr + ' ' + sign(rv(t, 'nrtg'));
+    });
+  }
+
+  function diaRender(eff, posOf) {
+    var W = dia.W, top = dia.top, bot = dia.bot, g0 = dia.gutter, svg = dia.svg;
+    var P = function (u, v) { return [eff.ax + u * eff.K, eff.ay - v * eff.K]; };
+    var OD = function (o, d) { return P((o - d) / R2, (o + d) / R2); };   // offense / defense above average
+    var xy = function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); };
+    var big = 400;
+    // shaded zone: better than league average on both ends
+    var g = '<polygon class="zone-good" points="' + [OD(0, 0), OD(big, 0), OD(big, big), OD(0, big)].map(xy).join(' ') + '"/>';
+    // net-rating gridlines (horizontal), re-ticked for what is visible
+    var netAt = function (y) { return (eff.ay - y) / eff.K * R2; };
+    var lab = '';
+    ticks(netAt(bot), netAt(top), Math.round(5 * Math.min(dia.z.s, 2))).forEach(function (n) {
+      var y = eff.ay - n / R2 * eff.K;
+      if (y < top + 4 || y > bot - 4) return;
+      g += '<line class="' + (n === 0 ? 'zeroline' : 'gridline') + '" x1="' + g0 + '" x2="' + W + '" y1="' + y.toFixed(1) + '" y2="' + y.toFixed(1) + '"/>';
+      lab += '<text class="ax-label" x="2" y="' + (y + 3.5).toFixed(1) + '">' + (n === 0 ? '0' : sign(n, Math.abs(n) % 1 ? 1 : 0)) + '</text>';
+    });
+    // league-average offense and defense (the two diagonals)
+    var a1 = OD(0, -big), a2 = OD(0, big), b1 = OD(-big, 0), b2 = OD(big, 0);
+    g += '<line class="crossline" x1="' + a1[0] + '" y1="' + a1[1] + '" x2="' + a2[0] + '" y2="' + a2[1] + '"/>' +
+      '<line class="crossline" x1="' + b1[0] + '" y1="' + b1[1] + '" x2="' + b2[0] + '" y2="' + b2[1] + '"/>';
+    $('.d-grid', svg).innerHTML = g;
+    $('.d-ticks', svg).innerHTML = lab;
+    // zone names, placed at the outer edge of each zone and only where that zone really is
+    var c = OD(0, 0);
+    var zoneAt = function (x, y) {
+      var u = (x - eff.ax) / eff.K, v = (eff.ay - y) / eff.K;
+      return ((u + v) > 0 ? 'O' : 'o') + ((v - u) > 0 ? 'D' : 'd');
+    };
+    var cxl = clamp(c[0], g0 + 70, W - 70);
+    var zones = [                                // in the strips kept free of logos
+      ['OD', 'good at both ends', cxl, top + 14, 'middle', cxl, top + 14],
+      ['od', 'poor at both ends', cxl, bot - 4, 'middle', cxl, bot - 4],
+    ];
+    $('.d-zones', svg).innerHTML = zones.map(function (z) {
+      return zoneAt(z[5], z[6]) === z[0] ? '<text class="zone-label" x="' + z[2] + '" y="' + z[3] + '" text-anchor="' + z[4] + '">' + z[1] + '</text>' : '';
+    }).join('');
+    $$('.ghost', svg).forEach(function (gh) {
+      var t = S.teams[gh.getAttribute('data-team')], r = diaPos(t, 'raw'), q = diaPos(t, 'adj');
+      var p1 = P(r.u, r.v), p2 = P(q.u, q.v), ln = gh.firstChild, ci = gh.lastChild;
+      ln.setAttribute('x1', p1[0]); ln.setAttribute('y1', p1[1]); ln.setAttribute('x2', p2[0]); ln.setAttribute('y2', p2[1]);
+      ci.setAttribute('cx', p1[0]); ci.setAttribute('cy', p1[1]);
+      gh.style.display = visible(t) ? '' : 'none';
+    });
+    $$('.pt', svg).forEach(function (pt) {
+      var q = posOf(S.teams[pt.getAttribute('data-team')]), p = P(q.u, q.v);
+      pt.style.transform = 'translate(' + p[0].toFixed(1) + 'px,' + p[1].toFixed(1) + 'px)';
+    });
+  }
 
   function setZoom(s, tx, ty) {
     var W = dia.W, H = dia.H;
+    if (dia.raf) { cancelAnimationFrame(dia.raf); dia.raf = 0; }
     s = clamp(s, 1, ZMAX);
     dia.z = { s: s, tx: clamp(tx, W - W * s, 0), ty: clamp(ty, H - H * s, 0) };
-    dia.svg.classList.add('instant');
     dia.svg.classList.toggle('zoomed', s >= 2.2);
-    dia.svg.classList.toggle('zoom-in', s > 1);
     dia.svg.style.touchAction = s > 1 ? 'none' : '';
     $('[data-z=reset]', dia.wrap).hidden = s <= 1;
-    layoutDiamond();
+    diaRender(diaEff(), function (t) { return diaPos(t, S.mode); });
   }
   function zoomAt(p, f) {
     var z = dia.z, s = clamp(z.s * f, 1, ZMAX);
@@ -532,36 +608,29 @@
     setZoom(s, p[0] - bx * s, p[1] - by * s);
   }
 
-  function layoutDiamond() {
-    var z = dia.z, W = dia.W, top = dia.top, bot = dia.bot, svg = dia.svg;
-    // net-rating gridlines, re-ticked for the visible range
-    var netAt = function (y) { return (dia.cy - (y - z.ty) / z.s) / dia.k * Math.SQRT2; };
-    var nTop = netAt(top), nBot = netAt(bot);
-    var g = '', lab = '';
-    ticks(nBot, nTop, Math.round(6 * Math.min(z.s, 2))).forEach(function (n) {
-      var y = dP(0, n / Math.SQRT2)[1];
-      if (y < top + 4 || y > bot - 4) return;
-      g += '<line class="' + (n === 0 ? 'zeroline' : 'gridline') + '" x1="' + dia.gutter + '" x2="' + W + '" y1="' + y.toFixed(1) + '" y2="' + y.toFixed(1) + '"/>';
-      lab += '<text class="ax-label" x="2" y="' + (y + 3.5).toFixed(1) + '">' + (n === 0 ? '0' : sign(n, Math.abs(n) % 1 ? 1 : 0)) + '</text>';
-    });
-    // league-average offense (o = 0 -> u = -v) and defense (dd = 0 -> u = v) diagonals
-    var big = 200;
-    var a = dP(-big, big), b = dP(big, -big), c = dP(-big, -big), d = dP(big, big);
-    g += '<line class="crossline" x1="' + a[0] + '" y1="' + a[1] + '" x2="' + b[0] + '" y2="' + b[1] + '"/>' +
-      '<line class="crossline" x1="' + c[0] + '" y1="' + c[1] + '" x2="' + d[0] + '" y2="' + d[1] + '"/>';
-    $('.d-grid', svg).innerHTML = g;
-    $('.d-ticks', svg).innerHTML = lab;
-    $$('.ghost', svg).forEach(function (gh) {
-      var t = S.teams[gh.getAttribute('data-team')], r = dia.pos(t, 'raw'), q = dia.pos(t, 'adj');
-      var p1 = dP(r.u, r.v), p2 = dP(q.u, q.v), ln = gh.firstChild, ci = gh.lastChild;
-      ln.setAttribute('x1', p1[0]); ln.setAttribute('y1', p1[1]); ln.setAttribute('x2', p2[0]); ln.setAttribute('y2', p2[1]);
-      ci.setAttribute('cx', p1[0]); ci.setAttribute('cy', p1[1]);
-      gh.style.display = visible(t) ? '' : 'none';
-    });
-    $$('.pt', svg).forEach(function (pt) {
-      var t = S.teams[pt.getAttribute('data-team')], q = dia.pos(t, S.mode), p = dP(q.u, q.v);
-      pt.style.transform = 'translate(' + p[0].toFixed(1) + 'px,' + p[1].toFixed(1) + 'px)';
-    });
+  // refit to the teams on show and glide there (positions and axes move together)
+  function diaAnimate(fromMode, toMode) {
+    if (dia.raf) cancelAnimationFrame(dia.raf);
+    var e0 = diaEff();
+    dia.fit = diaFit(toMode);
+    dia.z = { s: 1, tx: 0, ty: 0 };
+    dia.svg.classList.remove('zoomed');
+    dia.svg.style.touchAction = '';
+    $('[data-z=reset]', dia.wrap).hidden = true;
+    var e1 = diaEff();
+    var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var dur = reduce ? 0 : 700, t0 = performance.now();
+    var lerp = function (a, b, t) { return a + (b - a) * t; };
+    function frame(now) {
+      var t = dur ? Math.min(1, (now - t0) / dur) : 1;
+      var e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      diaRender({ ax: lerp(e0.ax, e1.ax, e), ay: lerp(e0.ay, e1.ay, e), K: lerp(e0.K, e1.K, e) }, function (tm) {
+        var a = diaPos(tm, fromMode), b = diaPos(tm, toMode);
+        return { u: lerp(a.u, b.u, e), v: lerp(a.v, b.v, e) };
+      });
+      dia.raf = t < 1 ? requestAnimationFrame(frame) : 0;
+    }
+    dia.raf = requestAnimationFrame(frame);
   }
 
   function bindDiamondGestures(svg) {
@@ -630,25 +699,19 @@
     }, { passive: false });
   }
 
-  function updateDiamond() {
-    if (!dia || !document.body.contains(dia.svg)) return;
-    dia.svg.classList.remove('instant');           // let logos glide between raw and adjusted
-    dia.svg.classList.toggle('mode-raw', S.mode === 'raw');
-    $$('.pt', dia.svg).forEach(function (g) {
-      var t = S.teams[g.getAttribute('data-team')];
-      g.style.opacity = visible(t) ? '' : '0.12';
-      g.style.pointerEvents = visible(t) ? '' : 'none';
-      $('.pt-label', g).textContent = t.abbr + ' ' + sign(rv(t, 'nrtg'));
-    });
-    layoutDiamond();
+  function updateDiamond(fromMode) {
+    if (!dia || !dia.svg || !document.body.contains(dia.svg)) return;
+    diaDecorate();
+    diaAnimate(fromMode || S.mode, S.mode);
     var foot = $('#rt-foot');
     if (foot && S.view === 'diamond') drawRatingsFootOnly(foot);
   }
   function drawRatingsFootOnly(foot) {
-    foot.innerHTML = '<b>Height = net rating.</b> Further up-right = better offense, further up-left = better defense. ' +
-      'The two diagonal lines mark the league average (' + S.data.league.rtg.toFixed(1) + '). ' +
+    foot.innerHTML = '<b>The higher a team sits, the better</b>: height is net rating, so teams at the same height are equally good, ' +
+      'whether they get there with offense (further right) or defense (further left). ' +
+      'The diagonals mark league-average offense and defense; teams in the shaded top zone beat the average on both ends. ' +
       (S.mode === 'adj' ? 'Small rings show where each team sits before the adjustment. ' : '') +
-      '<b>Pinch or double-tap to zoom</b>, drag to move, tap a logo for details.';
+      'The view fits the teams shown. <b>Pinch or double-tap to zoom</b>, drag to move, tap a logo for details.';
   }
 
   function setSelection(abbr) {
@@ -1048,37 +1111,13 @@
   }
 
   function threeChart(t) {
-    var lgp = S.data.league.tp;
-    var all = t.roster.map(function (id) { return [id, S.players[id]]; }).filter(function (r) { return r[1]; });
-    var rows = all.filter(function (r) { return r[1].tpa > 0; });
-    var none = all.filter(function (r) { return r[1].tpa === 0; });
-    if (!rows.length) return '';
-    var dmax = 70;
-    var x = function (v) { return (clamp(v, 0, dmax) / dmax * 100).toFixed(2); };
-    var maxA = Math.max.apply(null, rows.map(function (r) { return r[1].tpa; }));
-    var html = '<div class="section-t">3-point shooting <small>sorted by attempts</small></div>' +
-      '<div class="tp-head"><span>Team <b>' + (t.tp != null ? t.tp.toFixed(1) + '%' : '–') + '</b> on ' + t.tpa_g.toFixed(1) + ' attempts a game</span>' +
-      '<span>League ' + (lgp != null ? lgp.toFixed(1) + '%' : '–') + '</span></div>' +
-      '<div class="tp-axis" aria-hidden="true"><span></span><span class="track">' + [0, 20, 40, 60].map(function (v) {
-        return '<span class="tick" style="left:' + x(v) + '%">' + v + '%</span>';
-      }).join('') + '</span><span></span></div>';
-    html += rows.map(function (r) {
-      var id = r[0], p = r[1], v = p.tp, above = v >= lgp;
-      var lo = Math.min(v, lgp), hi = Math.max(v, lgp);
-      var dsz = (7 + 9 * Math.sqrt(p.tpa / maxA)).toFixed(1);
-      return '<button type="button" class="tp-row' + (p.tpa < 10 ? ' small' : '') + '" data-player="' + esc(id) + '" aria-label="' +
-        esc(p.name) + ', ' + p.tpm + ' of ' + p.tpa + ' threes, ' + v.toFixed(1) + ' percent">' +
-        '<span class="tp-name">' + esc(p.short || p.name) + '</span><span class="track">' +
-        '<span class="avg" style="left:' + x(lgp) + '%"></span>' +
-        '<span class="stem ' + (above ? 'pos' : 'neg') + '" style="left:' + x(lo) + '%;width:' + (x(hi) - x(lo)).toFixed(2) + '%"></span>' +
-        '<span class="bub ' + (above ? 'pos' : 'neg') + '" style="left:' + x(v) + '%;width:' + dsz + 'px;height:' + dsz + 'px"></span></span>' +
-        '<span class="tp-val"><small>' + p.tpm + '/' + p.tpa + '</small><b>' + v.toFixed(1) + '%</b></span></button>';
-    }).join('');
-    html += '<div class="tp-legend"><span><i style="width:9px;height:9px;background:var(--pos)"></i>above league average</span>' +
-      '<span><i style="width:9px;height:9px;background:var(--neg)"></i>below</span><span>bigger dot = more attempts</span>' +
-      '<span>faded = fewer than 10 attempts</span></div>';
-    if (none.length) html += '<p class="tp-none">No threes attempted: ' + none.map(function (r) { return esc(r[1].short || r[1].name); }).join(', ') + '.</p>';
-    return html;
+    var list = t.roster.map(function (id) {
+      var p = S.players[id];
+      return p ? { id: id, name: p.name, short: p.short, tpm: p.tpm, tpa: p.tpa } : null;
+    }).filter(Boolean);
+    return window.tpChart(t, list, S.data.league.tp, { interactive: true }) +
+      '<p class="foot"><a class="inline-link" href="/threes#' + t.abbr + '">Open the spoiler-free 3P% page \u2197</a> ' +
+      '(only 3-point numbers, no records, ratings or odds).</p>';
   }
 
   function openPlayer(id) {

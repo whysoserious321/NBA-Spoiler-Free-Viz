@@ -226,11 +226,13 @@ svg text { font-family: inherit; }
 .gridline { stroke: var(--grid); stroke-width: 1; }
 .zeroline { stroke: var(--axis); stroke-width: 1; }
 .crossline { stroke: var(--axis); stroke-width: 1; }
-.pt { transition: transform .75s cubic-bezier(.2, .8, .2, 1), opacity .25s; cursor: pointer; }
-.instant .pt { transition: opacity .25s; }
+.pt { transition: opacity .25s; cursor: pointer; }
 .zoomed .pt .pt-label { opacity: 1; }
-.corner { transition: opacity .2s; }
-.zoom-in .corner { opacity: 0; }
+.zone-good { fill: var(--accent); fill-opacity: .08; }
+.zone-label { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; fill: var(--muted); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+.lg-zone { width: 12px; height: 12px; border-radius: 3px; background: var(--accent); opacity: .3; }
+.dia-key { margin-bottom: 6px; }
+.dia-key b { color: var(--ink); }
 .chart-wrap.bleed { margin: 0 -16px; }
 .zoom-ctl { position: absolute; right: 8px; bottom: 30px; display: flex; flex-direction: column; gap: 6px; }
 .chart-wrap.bleed .zoom-ctl { right: 12px; }
@@ -324,6 +326,9 @@ svg.diamond { -webkit-user-select: none; user-select: none; }
   height: 26px; width: 100%; border: 0; background: none; padding: 0; cursor: pointer; text-align: left; border-radius: 6px;
 }
 .tp-row:hover { background: var(--surface-2); }
+.tp-row.static { cursor: default; }
+.tp-row.static:hover { background: none; }
+.inline-link { color: var(--accent); text-decoration: none; font-weight: 600; }
 .tp-name { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tp-row .track .avg { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--axis); }
 .tp-row .track .stem { position: absolute; top: 50%; height: 2px; margin-top: -1px; border-radius: 2px; }
@@ -399,6 +404,23 @@ svg.diamond { -webkit-user-select: none; user-select: none; }
 .pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .pill { font-size: 12px; padding: 5px 10px; border-radius: 999px; background: var(--accent-wash); color: var(--ink); font-weight: 600; }
 
+/* --------------------------------------------------------- /threes page */
+.tpick-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+.tpick {
+  border: 1px solid var(--ring); background: var(--surface-2); border-radius: 12px; cursor: pointer;
+  padding: 7px 0 5px; display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 52px;
+}
+.tpick .logo { width: 28px; height: 28px; }
+.tpick span { font-size: 10.5px; font-weight: 700; color: var(--ink-2); letter-spacing: .02em; }
+.tpick[aria-pressed="true"] { border: 2px solid var(--accent); background: var(--accent-wash); padding: 6px 0 4px; }
+.tpick[aria-pressed="true"] span { color: var(--ink); }
+.game-chips { margin-bottom: 8px; }
+.tp-card .sh-top .logo { width: 44px; height: 44px; }
+.tp-card .sh-top h3 { font-size: 18px; }
+.card.empty p { margin: 0; color: var(--ink-2); font-size: 14px; text-align: center; }
+body.threes main { padding-bottom: 32px; }
+@media (min-width: 640px) { .tpick-grid { grid-template-columns: repeat(10, minmax(0, 1fr)); } }
+
 /* ---------------------------------------------------------------- tooltip */
 .tip {
   position: fixed; z-index: 60; pointer-events: none;
@@ -414,7 +436,7 @@ svg.diamond { -webkit-user-select: none; user-select: none; }
 .tabbar {
   position: fixed; z-index: 30; left: 0; right: 0; bottom: 0;
   height: calc(var(--tabbar-h) + var(--safe-b)); padding-bottom: var(--safe-b);
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   -webkit-backdrop-filter: saturate(1.4) blur(16px);
   backdrop-filter: saturate(1.4) blur(16px);
@@ -445,7 +467,7 @@ svg.diamond { -webkit-user-select: none; user-select: none; }
 }
 @media (min-width: 1000px) {
   .tabbar {
-    left: 50%; right: auto; bottom: 16px; width: 420px; transform: translateX(-50%);
+    left: 50%; right: auto; bottom: 16px; width: 500px; transform: translateX(-50%);
     height: var(--tabbar-h); padding: 0; border-radius: 20px; border: 1px solid var(--ring);
     box-shadow: 0 8px 30px rgba(0,0,0,.12);
   }

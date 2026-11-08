@@ -1,0 +1,17 @@
+{
+  "id": "/threes",
+  "name": "NBAViz 3-point check",
+  "short_name": "3P%",
+  "description": "Season 3-point shooting for every roster, with no scores, records, ratings or odds",
+  "start_url": "/threes",
+  "scope": "/threes",
+  "display": "standalone",
+  "theme_color": "#0d0d0d",
+  "background_color": "#0d0d0d",
+  "lang": "en",
+  "icons": [
+    { "src": "/static/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

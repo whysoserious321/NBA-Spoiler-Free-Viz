@@ -1,70 +1,219 @@
 # NBAViz
 
-Mobile-first NBA dashboard: net rating (raw and opponent-adjusted) with a
-zoomable ORtg/DRtg diamond, offensive and defensive rating, season stat leaders, a 3P% chart for every roster, and
-Polymarket championship and MVP odds.
+A small, mobile-first NBA dashboard that runs on a Raspberry Pi. It shows how good
+every team really is (net rating, raw and **opponent-adjusted**), who leads the league,
+what the betting market thinks about the title and MVP races, and every player's
+3-point shooting. It includes a **spoiler-free 3P% page** you can open while watching a game.
 
-## Run
+Flask + vanilla JavaScript + hand-written SVG. No build step, no front-end dependencies,
+no database. About 20 polite requests a day.
 
-```bash
-python3 app.py                                  # http://<pi>:5003
-FLASK_APP=app.py flask run --host=0.0.0.0 --port=5003   # WebServers/Start.sh style
+<p align="center">
+  <img src="docs/screenshots/diamond.png" width="200" alt="Net rating diamond">
+  <img src="docs/screenshots/ladder.png" width="200" alt="Net rating ladder">
+  <img src="docs/screenshots/team.png" width="200" alt="Team sheet with 3P% chart">
+  <img src="docs/screenshots/threes.png" width="200" alt="Spoiler-free 3-point page">
+</p>
+<p align="center">
+  <img src="docs/screenshots/leaders.png" width="200" alt="Season leaders">
+  <img src="docs/screenshots/mvp.png" width="200" alt="MVP odds">
+  <img src="docs/screenshots/title.png" width="200" alt="Title odds against net rating">
+</p>
+
+> All screenshots use the built-in demo mode: every number and every player in them is made up.
+
+## Features
+
+- **Net rating diamond.** Offensive vs. defensive rating rotated 45° so that *height is net rating*
+  (after Owen Phillips' "diamond plots" in The F5). Switch between raw and opponent-adjusted
+  ratings and filter by conference; the view fits the teams on show and glides between states.
+  Pinch, double-tap or use +/− to zoom. Logos keep their size, so a crowded middle spreads out.
+- **Ladder.** The same ratings as a ranked list: a ring for the raw net rating, a dot for the adjusted
+  one, so you can see whose schedule flattered them.
+- **Team sheet.** Offense, defense and net rating (adjusted and raw, with league ranks), strength of
+  schedule, pace, and a compact 3P% chart for every player on the roster.
+- **Spoiler-free 3P% page** (`/threes`). Pick one or two teams, or tap one of today's matchups, and see
+  each player's season 3-point shooting. The page loads its own minimal JSON, so it never receives
+  scores, records, ratings, standings or odds. It can be installed on its own home-screen icon.
+- **Season leaders.** Points, rebounds, assists, 3-pointers made, steals, blocks and true shooting:
+  a top-5 card per stat plus a beeswarm of every qualified player, so you can see how far ahead the leader is.
+- **MVP and championship odds** from Polymarket: shares normalised to 100%, 24-hour change,
+  price history, and a "market vs. court" chart of title odds against adjusted net rating.
+- **Demo mode** (`/?demo=1`) with invented numbers and fictional players, for screenshots or for
+  when you haven't watched last night's games yet. The browser remembers it until you switch back.
+- Dark and light themes, installable PWA, works offline with the last data it saw.
+
+## Reading the diamond
+
+```
+              ↑ better net rating
+     better defense ↖       ↗ better offense
+
+                good at both ends
+                 (shaded zone)
+   defense-first  ╲         ╱  offense-first
+                   ╲       ╱
+                    ╲     ╱
+                     ╲   ╱
+                      ╲ ╱
+                      ╱ ╲
+                poor at both ends
 ```
 
-Started on boot by `WebServers/Start.sh` (port 5003, PID in `WebServers/flask_3.pid`).
+- **Higher is better.** A team's height is its net rating, so teams at the same height are equally
+  good, whether they get there with offense (further right) or defense (further left).
+  There is no single "optimal line". The best team is simply the highest one.
+- The two diagonals are the **league-average offense** and **league-average defense**. Teams in the
+  shaded top zone are better than average at both ends; teams at the bottom are worse at both.
+- Horizontal gridlines are net rating: +5, 0, −5 and so on.
+- In *Adjusted* mode, small rings show where each team sat before the schedule adjustment.
 
-The app refreshes its data once a day at 08:00 local time (`NBAVIZ_REFRESH_AT`)
-in a background thread:
+## How the ratings are computed
+
+The definitions follow Basketball-Reference's glossary; the numbers are computed from ESPN's season totals.
+
+**Possessions** (per team, averaged with the opponent's estimate):
+
+```
+poss = FGA + 0.4·FTA − 1.07·(ORB / (ORB + opp DRB))·(FGA − FG) + TOV
+```
+
+**Ratings:** `ORtg = 100·points / poss`, `DRtg = 100·points allowed / poss`, `NRtg = ORtg − DRtg`.
+
+**Opponent adjustment** (SRS-style). Each team's raw ratings are modelled as its own quality plus
+the average quality of the opponents it has played:
+
+```
+ORtg_i = lg + o_i + mean(d_j over opponents j)
+DRtg_i = lg + d_i + mean(o_j over opponents j)
+with Σo = Σd = 0, solved by least squares
+```
+
+`ORtg/A = lg + o_i` and `DRtg/A = lg + d_i` are what the team would post against a league-average
+schedule. Early in the season the adjustment can move a team by several points; over a full season
+raw and adjusted net ratings end up very close.
+
+Strength of schedule is the average adjusted net rating of the opponents a team has faced.
+ESPN's season totals can lag the scoreboard by a game for a few hours after games end; the
+adjustment only counts the opponents of games the totals already include, and the team sheet says
+when ratings cover fewer games than the record.
+
+## Quick start
+
+Requires Python 3.9+.
+
+```bash
+git clone https://github.com/whysoserious321/NBAViz.git
+cd NBAViz
+pip install -r requirements.txt
+python3 app.py
+```
+
+Open `http://localhost:5003`. On the first start the app fetches the season so far (about one to two
+minutes); until then the page says the first refresh is still running. Open `http://localhost:5003/?demo=1`
+to look around with made-up data straight away.
+
+You can also refresh by hand:
+
+```bash
+python3 scrape.py            # fetch and rebuild data/dashboard.json
+python3 scrape.py --offline  # rebuild from the cache, no network
+python3 demo.py              # regenerate the demo data
+```
+
+### Configuration
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `NBAVIZ_PORT` | `5003` | Port for `python3 app.py` |
+| `NBAVIZ_REFRESH_AT` | `08:00` | Daily refresh time, server local time |
+| `NBAVIZ_NO_REFRESH` | unset | `1` disables the built-in schedule |
+
+### Refresh schedule
+
+A background thread in the app refreshes once a day at `NBAVIZ_REFRESH_AT`:
 
 - a failed refresh is retried every 30 minutes until it works;
-- if ESPN's season totals don't include last night's games yet, it checks
-  again every hour until they do (not after 14:00);
-- after a reboot it refreshes straight away if the data is older than the
-  latest 08:00.
+- if ESPN's season totals don't include last night's games yet, it checks again every hour (until 14:00);
+- after a restart it refreshes straight away if the data is older than the latest scheduled time.
 
-`/api/status` shows the next run and the last result. `NBAVIZ_NO_REFRESH=1`
-turns the schedule off, `NBAVIZ_PORT` changes the port.
+A file lock makes sure only one process runs the schedule. `GET /api/status` shows the next run and the last result.
 
-Manual refresh: `python3 scrape.py` (or `--offline` to rebuild from cache).
+### Running on boot
 
-## Spoiler-free demo
+Any process manager works. The author's Raspberry Pi starts it from a shell script called by `rc.local`:
 
-Open `/?demo=1` to see made-up numbers and fictional players (real team logos).
-The browser remembers it until you tap the yellow "Demo data" badge, which asks
-before switching to live data. `/?live=1` also switches back. Demo data comes
-from `demo.py` (`python3 demo.py` regenerates it).
+```bash
+cd /path/to/NBAViz
+FLASK_APP=app.py nohup flask run --host=0.0.0.0 --port=5003 &
+```
 
-## Data
+A systemd unit is the tidier option:
 
-| What | Source | Requests per refresh |
+```ini
+[Unit]
+Description=NBAViz
+After=network-online.target
+
+[Service]
+WorkingDirectory=/path/to/NBAViz
+ExecStart=/usr/bin/python3 app.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+## Endpoints
+
+| Path | What |
+|---|---|
+| `/` | Dashboard (`?demo=1` for demo data, `?live=1` to switch back) |
+| `/threes` | Spoiler-free 3-point page (`#BOS-NYK` preselects teams) |
+| `/api/dashboard` | Everything the dashboard shows, as JSON |
+| `/api/threes` | Rosters with 3PM/3PA, team 3P%, today's matchups. No results of any kind |
+| `/api/status` | Refresh schedule status |
+| `/img/logos/…`, `/img/heads/…` | Cached team logos and player headshots |
+
+## Data sources
+
+| Data | Source | Requests per refresh |
 |---|---|---|
-| Team season totals incl. opponents -> ORtg, DRtg, NRtg | ESPN `statistics/byteam` | 1 |
-| Results (who played whom) for the opponent adjustment and W-L | ESPN scoreboard, one per day, finished days cached forever | 1-2 |
-| Player per-game stats, qualified + all | ESPN `statistics/byathlete` | 2 |
-| Title + MVP odds and price history | Polymarket Gamma + CLOB (read-only) | ~14 |
-| Logos, headshots | ESPN CDN, downloaded once to `data/img/` | 0 after first run |
+| Team season totals incl. opponent totals | ESPN `statistics/byteam` | 1 |
+| Results, to know who played whom | ESPN scoreboard, one per day; finished days are cached forever | 1–2 |
+| Player per-game stats | ESPN `statistics/byathlete` (all players and qualified players) | 2 |
+| Championship and MVP odds, price history | Polymarket Gamma and CLOB APIs (read-only) | ~14 |
+| Logos and headshots | ESPN's image CDN, downloaded once into `data/img/` | 0 after the first run |
 
-Basketball-Reference (the original plan) serves scripts a Cloudflare bot
-challenge, and stats.nba.com / cdn.nba.com JSON is blocked from this IP, so
-neither is used. `model.py` computes the ratings the Basketball-Reference way:
-possessions from FGA, FTA, ORB, TOV; ORtg/DRtg per 100 possessions; and an
-SRS-style least-squares opponent adjustment for ORtg/A, DRtg/A, NRtg/A.
-ESPN's season totals can lag the scoreboard by a game for a few hours; the
-adjustment only counts opponents of games the totals include.
+Requests go through one session with a clear `User-Agent`, a minimum gap between calls, and a hard
+stop on HTTP 429. Basketball-Reference is **not** scraped: it serves automated clients a bot
+challenge, and its data-use policy asks people not to build sites on scraped data. stats.nba.com is
+not used either, because it is unreliable from home and cloud IP addresses.
 
-`data/snapshots/YYYY-MM-DD.json` keeps one small record per day (ratings and
-odds) for future trend charts.
+Every refresh also writes a small daily snapshot (`data/snapshots/YYYY-MM-DD.json`) of ratings and
+odds, for trend charts later.
 
-## Files
+## Project layout
 
-- `app.py` - Flask app, background refresh, `/api/dashboard`, `/img/...`
-- `scrape.py` - fetching and caching
-- `model.py` - ratings, adjustment, leaders, odds matching
-- `demo.py` - spoiler-free demo data
-- `templates/index.html`, `static/app.js`, `static/app.css` - the page (vanilla JS + SVG, no build step)
-- `static/sw.js`, `static/manifest.json`, `static/icons/` - installable PWA
+```
+app.py              Flask app, daily refresh schedule, JSON endpoints
+scrape.py           fetching and caching (ESPN, Polymarket, images)
+model.py            possessions, ratings, opponent adjustment, leaders, odds matching
+demo.py             spoiler-free demo data
+templates/          index.html (dashboard), threes.html (3P% page)
+static/app.js       dashboard: diamond, ladder, leaders, odds, sheets
+static/threes.js    spoiler-free 3P% page
+static/tpchart.js   the 3P% chart shared by both pages
+static/app.css      styles, light and dark
+static/sw.js        service worker (network first, offline fallback)
+data/               generated: caches, images, dashboard.json (git-ignored)
+```
 
-## Privacy
+## Disclaimer
 
-Keep it private (LAN or Tailscale). Sports-data sites and the NBA restrict
-republishing, and NBA logos are trademarks.
+NBAViz is a personal, non-commercial project. It is not affiliated with or endorsed by the NBA,
+ESPN, Polymarket or Sports Reference. Team names and logos are trademarks of their owners; logos
+and headshots are fetched at runtime and are not part of this repository. ESPN's JSON endpoints are
+undocumented and can change without notice. Odds are shown for information only. This is not
+betting advice, and the app has no trading or referral links. If you host it publicly, check the
+data providers' terms first.

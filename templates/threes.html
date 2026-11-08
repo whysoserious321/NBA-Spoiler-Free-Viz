@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
+  <title>NBAViz 3P%</title>
+  <meta name="description" content="Season 3-point shooting for every roster, with no scores, records, ratings or odds"/>
+  <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)"/>
+  <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)"/>
+  <link rel="manifest" href="{{ url_for('static', filename='manifest-threes.json') }}"/>
+  <link rel="icon" href="{{ url_for('static', filename='icons/icon.svg') }}" type="image/svg+xml"/>
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-title" content="3P%"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ v }}"/>
+</head>
+<body class="threes">
+  <header class="topbar">
+    <div class="topbar-in">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/>
+        </svg>
+        <div>
+          <h1>3-point check</h1>
+          <p id="meta" class="meta">Loading…</p>
+        </div>
+      </div>
+      <button id="demo-pill" class="demo-pill" hidden>Demo data</button>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <div class="skeleton" aria-hidden="true"><div></div><div></div></div>
+  </main>
+
+  <script src="{{ url_for('static', filename='tpchart.js') }}?v={{ v }}"></script>
+  <script src="{{ url_for('static', filename='threes.js') }}?v={{ v }}"></script>
+</body>
+</html>
