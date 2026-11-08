@@ -84,6 +84,7 @@ img { display: block; }
 .topbar {
   position: sticky; top: 0; z-index: 20;
   padding-top: var(--safe-t);
+  background: var(--page);
   background: color-mix(in srgb, var(--page) 86%, transparent);
   -webkit-backdrop-filter: saturate(1.4) blur(14px);
   backdrop-filter: saturate(1.4) blur(14px);
@@ -238,6 +239,7 @@ svg text { font-family: inherit; }
 .chart-wrap.bleed .zoom-ctl { right: 12px; }
 .zoom-ctl button {
   width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--ring); cursor: pointer;
+  background: var(--surface-2);
   background: color-mix(in srgb, var(--surface-2) 92%, transparent); color: var(--ink);
   font-size: 19px; font-weight: 600; line-height: 1; display: grid; place-items: center;
   box-shadow: 0 2px 8px rgba(0,0,0,.15);
@@ -442,6 +444,7 @@ body.threes main { padding-bottom: 32px; }
   position: fixed; z-index: 30; left: 0; right: 0; bottom: 0;
   height: calc(var(--tabbar-h) + var(--safe-b)); padding-bottom: var(--safe-b);
   display: grid; grid-template-columns: repeat(5, 1fr);
+  background: var(--surface);
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   -webkit-backdrop-filter: saturate(1.4) blur(16px);
   backdrop-filter: saturate(1.4) blur(16px);

@@ -148,7 +148,9 @@ def build(games, teams_meta, season, label, norm_name):
             title_by_team[o['abbr']] = o
 
     # ---- players
-    by_name = {norm_name(p['name']): p['id'] for p in players_raw}
+    by_name = {}
+    for p in sorted(players_raw, key=lambda p: p['gp'] * p['mpg']):   # same name: the bigger role wins
+        by_name[norm_name(p['name'])] = p['id']
     players, rosters = {}, defaultdict(list)
     for p in players_raw:
         # true shooting from season totals when present (per-game averages are rounded)

@@ -56,10 +56,19 @@
 
   function load() {
     fetch('/api/threes' + (demo ? '?demo=1' : ''), { cache: 'no-cache' })
-      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
+      .then(function (r) {
+        return r.json().catch(function () { throw new Error('The server answered with HTTP ' + r.status + '. Is NBAViz running?'); })
+          .then(function (j) {
+            if (!r.ok) { var err = new Error(j.error || 'HTTP ' + r.status); err.status = r.status; throw err; }
+            return j;
+          });
+      })
       .then(function (d) { D = d; readSel(); render(); })
       .catch(function (e) {
-        main.innerHTML = '<div class="error"><p><b>Couldn’t load the data.</b></p><p>' + esc(e.message) + '</p></div>';
+        var retry = e.status === 503;
+        main.innerHTML = '<div class="error"><p><b>Couldn’t load the data.</b></p><p>' + esc(e.message) + '</p>' +
+          (retry ? '<p>Checking again every 15 seconds…</p>' : '') + '</div>';
+        if (retry) setTimeout(load, 15000);
       });
   }
 

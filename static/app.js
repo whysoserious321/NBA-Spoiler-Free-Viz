@@ -48,8 +48,7 @@
     if (Number(s) === 0) return s;
     return (v > 0 ? '+' : '−') + s;
   }
-  function num(v, d) { return v == null ? '–' : (v < 0 ? '−' : '') + Math.abs(v).toFixed(d == null ? 1 : d); }
-  function pct(p, d) {
+    function pct(p, d) {
     if (p == null) return '–';
     var x = p * 100;
     if (x > 0 && x < 0.1) return '<0.1%';
@@ -108,7 +107,7 @@
     return '<svg class="chart ' + (cls || '') + '" viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h +
       '" role="img" aria-label="' + esc(label) + '">';
   }
-  function avail(el) { return Math.max(260, Math.floor(el.getBoundingClientRect().width)); }
+  function avail(el) { return Math.max(220, Math.floor(el.getBoundingClientRect().width)); }
 
   /* ------------------------------------------------------------- tooltip */
 
@@ -155,9 +154,38 @@
     setTimeout(function () { if (!sheetOpen) { sheet.hidden = true; backdrop.hidden = true; } }, 330);
     setSelection(null);
     if (lastFocus && lastFocus.focus) lastFocus.focus({ preventScroll: true });
-    if (!fromPop && history.state && history.state.sheet) history.back();
+    if (!fromPop && history.state && history.state.sheet) {
+      // history.back() is asynchronous: a tab tapped before it lands would be undone by it,
+      // so tab navigation waits for it (see the tab bar handler below)
+      backPending = true;
+      clearTimeout(backTimer);
+      backTimer = setTimeout(finishBack, 3000);       // safety net if popstate never arrives
+      history.back();
+    }
   }
-  window.addEventListener('popstate', function () { if (sheetOpen) closeSheet(true); });
+  var backPending = false, backTimer = null, afterBack = null, navDuringBack = null;
+  function finishBack() {
+    backPending = false;
+    clearTimeout(backTimer);
+    var f = afterBack;
+    afterBack = null;
+    if (f) f();
+  }
+  window.addEventListener('popstate', function () {
+    if (backPending) {
+      // our own back() just landed; if the user navigated meanwhile, put them back where they went
+      var want = navDuringBack;
+      navDuringBack = null;
+      finishBack();
+      if (want && location.hash !== want) location.hash = want;
+    } else if (sheetOpen) closeSheet(true);
+  });
+  document.querySelector('.tabbar').addEventListener('click', function (e) {
+    var a = e.target.closest('a[data-tab]');
+    if (!a || !backPending) return;
+    e.preventDefault();
+    afterBack = function () { location.hash = a.getAttribute('href'); };
+  });
   backdrop.addEventListener('click', function () { closeSheet(); });
   $('.sheet-close', sheet).addEventListener('click', function () { closeSheet(); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSheet(); });
@@ -171,7 +199,8 @@
   (function () {
     var grip = $('.sheet-grip', sheet), y0 = null, dy = 0;
     grip.addEventListener('pointerdown', function (e) {
-      y0 = e.clientY; dy = 0; sheet.classList.add('dragging'); grip.setPointerCapture(e.pointerId);
+      y0 = e.clientY; dy = 0; sheet.classList.add('dragging');
+      try { grip.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     });
     grip.addEventListener('pointermove', function (e) {
       if (y0 == null) return;
@@ -201,7 +230,13 @@
 
   function load() {
     fetch('/api/dashboard' + (S.demo ? '?demo=1' : ''), { cache: 'no-cache' })
-      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
+      .then(function (r) {
+        return r.json().catch(function () { throw new Error('The server answered with HTTP ' + r.status + '. Is NBAViz running?'); })
+          .then(function (j) {
+            if (!r.ok) { var err = new Error(j.error || 'HTTP ' + r.status); err.status = r.status; throw err; }
+            return j;
+          });
+      })
       .then(function (d) {
         S.data = d;
         S.teams = {};
@@ -217,8 +252,10 @@
         route(true);
       })
       .catch(function (e) {
-        main.innerHTML = '<div class="error"><p><b>Couldn’t load the data.</b></p><p>' + esc(e.message) +
-          '</p><p><button class="chip" onclick="location.reload()">Try again</button></p></div>';
+        var retry = e.status === 503;                // first refresh still running: check again by itself
+        main.innerHTML = '<div class="error"><p><b>Couldn’t load the data.</b></p><p>' + esc(e.message) + '</p>' +
+          (retry ? '<p>Checking again every 15 seconds…</p>' : '<p><button class="chip" onclick="location.reload()">Try again</button></p>') + '</div>';
+        if (retry) setTimeout(load, 15000);
       });
   }
 
@@ -266,7 +303,12 @@
     if (openT && S.teams[openT]) openTeam(openT);
     if (openP && S.players[openP]) openPlayer(openP);
   }
-  window.addEventListener('hashchange', function () { if (S.data) { closeSheet(true); route(false); } });
+  window.addEventListener('hashchange', function () {
+    if (!S.data) return;
+    if (backPending) navDuringBack = location.hash;  // a sheet-close back() is still in flight
+    closeSheet(true);
+    route(false);
+  });
 
   function render() {
     hideTip();
@@ -447,9 +489,17 @@
   var dia = null;
   var ZMAX = 6, R2 = Math.SQRT2;
 
+  // league-average reference for each mode: the diagonals pass through the average team
+  function diaRef(m) {
+    var lg = S.data.league.rtg, ts = S.data.teams;
+    if (m !== 'adj' || !ts.length) return [lg, lg];
+    var so = 0, sd = 0;
+    ts.forEach(function (t) { so += t.ortg_a; sd += t.drtg_a; });
+    return [so / ts.length, sd / ts.length];
+  }
   function diaPos(t, m) {
-    var lg = S.data.league.rtg;
-    var o = (m === 'adj' ? t.ortg_a : t.ortg) - lg, dd = lg - (m === 'adj' ? t.drtg_a : t.drtg);
+    var ref = diaRef(m);
+    var o = (m === 'adj' ? t.ortg_a : t.ortg) - ref[0], dd = ref[1] - (m === 'adj' ? t.drtg_a : t.drtg);
     return { u: (o - dd) / R2, v: (o + dd) / R2 };
   }
   function diaBox(mode) {
@@ -593,7 +643,7 @@
       gh.style.display = visible(t) ? '' : 'none';
     });
     $$('.pt', svg).forEach(function (pt) {
-      var q = posOf(S.teams[pt.getAttribute('data-team')]), p = P(q.u, q.v);
+      var q = posOf(S.teams[pt.getAttribute('data-team')]), p = q.x != null ? [q.x, q.y] : P(q.u, q.v);
       pt.style.transform = 'translate(' + p[0].toFixed(1) + 'px,' + p[1].toFixed(1) + 'px)';
     });
   }
@@ -631,8 +681,9 @@
       var t = dur ? Math.min(1, (now - t0) / dur) : 1;
       var e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
       diaRender({ ax: lerp(e0.ax, e1.ax, e), ay: lerp(e0.ay, e1.ay, e), K: lerp(e0.K, e1.K, e) }, function (tm) {
+        // logos travel in straight lines on screen, so they never leave the frame mid-glide
         var a = diaPos(tm, fromMode), b = diaPos(tm, toMode);
-        return { u: lerp(a.u, b.u, e), v: lerp(a.v, b.v, e) };
+        return { x: lerp(e0.ax + a.u * e0.K, e1.ax + b.u * e1.K, e), y: lerp(e0.ay - a.v * e0.K, e1.ay - b.v * e1.K, e) };
       });
       dia.raf = t < 1 ? requestAnimationFrame(frame) : 0;
     }
@@ -760,7 +811,7 @@
   function carStep(car) { return car.firstElementChild.getBoundingClientRect().width + 16; }
 
   function leaderCard(s) {
-    var rows = s.rows.slice(0, 5), top = rows.length ? rows[0][1] : 1;
+    var rows = s.rows.slice(0, 5), top = (rows.length ? rows[0][1] : 0) || 1;
     return '<section class="card" aria-label="' + esc(s.label) + ' leaders">' +
       '<div class="card-h"><p class="kicker">Season leaders · per game</p><h2>' + esc(s.label) + '</h2>' +
       '<p>' + s.rows.length + ' qualified players</p></div>' +
@@ -802,6 +853,7 @@
     if (!rows.length) { host.innerHTML = '<p class="foot">No qualified players yet.</p>'; return; }
     var vals = rows.map(function (r) { return r[1]; });
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    if (hi - lo < 1e-6) { lo -= 1; hi += 1; }         // everyone tied: give the axis some room
     var tk = ticks(lo, hi, W < 420 ? 4 : 6);
     var d0 = Math.min(lo, tk[0]), d1 = Math.max(hi, tk[tk.length - 1]);
     var m = { l: 10, r: 10 };
@@ -886,8 +938,8 @@
 
   function oddsBars(ev, kind) {
     var outs = ev.outcomes, top = outs.slice(0, 8), rest = outs.slice(8);
-    var max = top.length ? top[0].prob : 1;
     var restP = rest.reduce(function (a, o) { return a + o.prob; }, 0);
+    var max = Math.max(top.length ? top[0].prob : 0, restP) || 1;   // the "others" bar never overflows
     var html = '<div class="bars">' + top.map(function (o) {
       var left, name, sub, attr;
       if (kind === 'title') {
@@ -978,6 +1030,7 @@
     series.forEach(function (s) { s.view = s.pts.filter(function (p) { return p[0] >= from; }); });
     var yMax = 0;
     series.forEach(function (s) { s.view.forEach(function (p) { yMax = Math.max(yMax, p[1]); }); });
+    yMax = Math.max(yMax, 0.01);
     var yt = ticks(0, yMax * 1.08, 4);
     var yTop = Math.max(yt[yt.length - 1], yMax);
     var W = avail(host), H = W < 500 ? 220 : 260, m = { l: 36, r: 14, t: 10, b: 24 };
@@ -1046,6 +1099,7 @@
     var L = W < 500 ? 22 : 28, m = { l: 40, r: L / 2 + 6, t: L / 2 + 6, b: 30 };
     var xs = teams.map(function (t) { return t.nrtg_a; });
     var x0 = Math.floor(Math.min.apply(null, xs) / 5) * 5, x1 = Math.ceil(Math.max.apply(null, xs) / 5) * 5;
+    if (x1 - x0 < 5) x1 = x0 + 5;
     var pmax = Math.max.apply(null, teams.map(function (t) { return t.title; }));
     var yTop = Math.sqrt(Math.max(0.05, pmax * 1.1));
     var X = function (v) { return m.l + (v - x0) / (x1 - x0) * (W - m.l - m.r); };
@@ -1103,7 +1157,7 @@
       '<div class="sh-top">' + logo(abbr, 'logo', t.name) + '<div><h3 id="sheet-title">' + esc(t.name) + '</h3>' +
       '<p>' + t.w + '–' + t.l + ' · ' + t.conf + (odds ? ' · title odds ' + pct(odds.prob) : '') + '</p></div></div>' +
       '<div class="hero"><div class="hero-num">' + sign(t.nrtg_a) + '</div><div class="hero-cap"><b>Adjusted net rating</b><br>' +
-      ordinal(t.rk.nrtg_a) + ' of 30 · raw ' + sign(t.nrtg) + ' (' + ordinal(t.rk.nrtg) + ')</div></div>' +
+      ordinal(t.rk.nrtg_a) + ' of ' + S.data.teams.length + ' · raw ' + sign(t.nrtg) + ' (' + ordinal(t.rk.nrtg) + ')</div></div>' +
       '<table class="rtable"><thead><tr><th></th><th>Adjusted</th><th>Raw</th></tr></thead><tbody>' +
       row('Offense', 'ortg') + row('Defense', 'drtg', 'lower = better') + row('Net', 'nrtg') + '</tbody></table>' +
       '<div class="tiles" style="margin-top:14px">' +

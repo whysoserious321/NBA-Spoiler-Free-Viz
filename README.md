@@ -6,7 +6,8 @@ what the betting market thinks about the title and MVP races, and every player's
 3-point shooting. It includes a **spoiler-free 3P% page** you can open while watching a game.
 
 Flask + vanilla JavaScript + hand-written SVG. No build step, no front-end dependencies,
-no database. About 20 polite requests a day.
+no database. One refresh a day of about 20 polite requests (a few more on mornings when ESPN
+is slow to update its season totals).
 
 <p align="center">
   <img src="docs/screenshots/diamond.png" width="200" alt="Net rating diamond">
@@ -110,8 +111,9 @@ python3 app.py
 ```
 
 Open `http://localhost:5003`. On the first start the app fetches the season so far (about one to two
-minutes); until then the page says the first refresh is still running. Open `http://localhost:5003/?demo=1`
-to look around with made-up data straight away.
+minutes); until then the page says the first refresh is still running and checks again by itself.
+Open `http://localhost:5003/?demo=1` to look around with made-up data straight away (team logos
+appear once the first refresh has downloaded them).
 
 You can also refresh by hand:
 

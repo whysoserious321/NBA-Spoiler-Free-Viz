@@ -162,7 +162,12 @@ def season_bounds(f, end_year):
 # ------------------------------------------------------------------------- ESPN
 
 def nba_abbr(espn_abbr):
-    return ESPN_TO_NBA.get(espn_abbr, espn_abbr)
+    a = ESPN_TO_NBA.get(espn_abbr, espn_abbr)
+    return re.sub(r'[^A-Z0-9]', '', (a or '').upper())     # used in file names and HTML
+
+
+def safe_id(v):
+    return re.sub(r'[^0-9]', '', str(v or ''))              # ESPN ids are numeric
 
 
 def parse_team(t):
@@ -266,7 +271,7 @@ def fetch_players(f, end_year, qualified):
         a = row['athlete']
         s = _categories(d, row)
         out.append({
-            'id': a['id'], 'name': a.get('displayName'), 'short': a.get('shortName'),
+            'id': safe_id(a['id']), 'name': a.get('displayName'), 'short': a.get('shortName'),
             'last': a.get('lastName'), 'pos': (a.get('position') or {}).get('abbreviation'),
             'team': nba_abbr(a.get('teamShortName') or ''),
             'gp': int(s.get('gamesPlayed', 0)), 'mpg': s.get('avgMinutes', 0),
@@ -354,7 +359,7 @@ def cache_image(f, url, path):
 
 def cache_team_logos(f, teams):
     for t in teams.values():
-        low = t['espn_abbr'].lower()
+        low = re.sub(r'[^a-z0-9]', '', t['espn_abbr'].lower())
         cache_image(f, f'{ESPN_IMG}/i/teamlogos/nba/500/{low}.png&h=96&w=96',
                     os.path.join(IMG_DIR, 'logos', f"{t['abbr']}.png"))
         cache_image(f, f'{ESPN_IMG}/i/teamlogos/nba/500-dark/{low}.png&h=96&w=96',
@@ -362,7 +367,7 @@ def cache_team_logos(f, teams):
 
 
 def cache_headshots(f, player_ids):
-    for pid in player_ids:
+    for pid in filter(None, map(safe_id, player_ids)):
         cache_image(f, f'{ESPN_IMG}/i/headshots/nba/players/full/{pid}.png&w=150&h=110',
                     os.path.join(IMG_DIR, 'heads', f'{pid}.png'))
 

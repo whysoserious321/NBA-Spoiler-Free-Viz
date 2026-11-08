@@ -199,6 +199,8 @@ def api_threes():
     if not os.path.exists(path):
         return jsonify({'error': 'No data yet - the first refresh is still running.'}), 503
     d = _load_json(path)
+    if not d:
+        return jsonify({'error': 'The data file could not be read; try again in a moment.'}), 503
     players = d.get('players', {})
     teams = []
     for t in sorted(d['teams'], key=lambda t: t['name']):
