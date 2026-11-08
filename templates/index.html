@@ -29,7 +29,7 @@
           <p id="meta" class="meta">Loading…</p>
         </div>
       </div>
-      <button id="demo-pill" class="demo-pill" hidden>Demo data</button>
+      <button id="mode-pill" class="mode-pill" hidden aria-label="Change data: live, up to a date, or demo"></button>
     </div>
   </header>
 
@@ -71,6 +71,7 @@
 
   <div id="tip" class="tip" role="status" hidden></div>
 
+  <script src="{{ url_for('static', filename='gate.js') }}?v={{ v }}"></script>
   <script src="{{ url_for('static', filename='tpchart.js') }}?v={{ v }}"></script>
   <script src="{{ url_for('static', filename='app.js') }}?v={{ v }}"></script>
 </body>

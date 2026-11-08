@@ -3,19 +3,22 @@
 A small, mobile-first NBA dashboard that runs on a Raspberry Pi. It shows how good
 every team really is (net rating, raw and **opponent-adjusted**), who leads the league,
 what the betting market thinks about the title and MVP races, and every player's
-3-point shooting. It includes a **spoiler-free 3P% page** you can open while watching a game.
+3-point shooting. It includes a **spoiler-free 3P% page** you can open while watching a game, and
+every visit starts by asking whether you want **live data or everything only up to a date**, so you
+can catch up on games without being spoiled.
 
 Flask + vanilla JavaScript + hand-written SVG. No build step, no front-end dependencies,
 no database. One refresh a day of about 20 polite requests (a few more on mornings when ESPN
 is slow to update its season totals).
 
 <p align="center">
+  <img src="docs/screenshots/start.png" width="200" alt="Start screen: live, up to a date, or demo">
   <img src="docs/screenshots/diamond.png" width="200" alt="Net rating diamond">
   <img src="docs/screenshots/ladder.png" width="200" alt="Net rating ladder">
   <img src="docs/screenshots/team.png" width="200" alt="Team sheet with 3P% chart">
-  <img src="docs/screenshots/threes.png" width="200" alt="Spoiler-free 3-point page">
 </p>
 <p align="center">
+  <img src="docs/screenshots/threes.png" width="200" alt="Spoiler-free 3-point page">
   <img src="docs/screenshots/leaders.png" width="200" alt="Season leaders">
   <img src="docs/screenshots/mvp.png" width="200" alt="MVP odds">
   <img src="docs/screenshots/title.png" width="200" alt="Title odds against net rating">
@@ -25,6 +28,10 @@ is slow to update its season totals).
 
 ## Features
 
+- **Live, or up to a date.** Every page load starts with a short question: *Live*, *Up to a date*, or
+  *Demo*. Pick the last game day you have watched and the whole app (ratings, records, leaders, odds,
+  odds trends and the 3P% page) shows only what was known the morning after it. See
+  [Live or up to a date](#live-or-up-to-a-date).
 - **Net rating diamond.** Offensive vs. defensive rating rotated 45° so that *height is net rating*
   (after Owen Phillips' "diamond plots" in The F5). Switch between raw and opponent-adjusted
   ratings and filter by conference; the view fits the teams on show and glides between states.
@@ -35,14 +42,43 @@ is slow to update its season totals).
   schedule, pace, and a compact 3P% chart for every player on the roster.
 - **Spoiler-free 3P% page** (`/threes`). Pick one or two teams, or tap one of today's matchups, and see
   each player's season 3-point shooting. The page loads its own minimal JSON, so it never receives
-  scores, records, ratings, standings or odds. It can be installed on its own home-screen icon.
+  scores, records, ratings, standings or odds. It asks the same live / up-to-a-date question and can
+  be installed on its own home-screen icon.
 - **Season leaders.** Points, rebounds, assists, 3-pointers made, steals, blocks and true shooting:
   a top-5 card per stat plus a beeswarm of every qualified player, so you can see how far ahead the leader is.
 - **MVP and championship odds** from Polymarket: shares normalised to 100%, 24-hour change,
   price history, and a "market vs. court" chart of title odds against adjusted net rating.
-- **Demo mode** (`/?demo=1`) with invented numbers and fictional players, for screenshots or for
-  when you haven't watched last night's games yet. The browser remembers it until you switch back.
+- **Demo mode**, the third start-screen option: invented numbers and fictional players, for
+  screenshots or for a first look before any real data exists.
 - Dark and light themes, installable PWA, works offline with the last data it saw.
+
+## Live or up to a date
+
+ESPN's season totals always mean "up to now", so the app keeps its own history: every morning's
+refresh saves the whole dashboard as a **snapshot** for the last game day it contains
+(`data/snapshots/YYYY-MM-DD.json.gz`). When you choose *Up to a date*, everything is served from that
+snapshot:
+
+- ratings, adjusted ratings, records, leaders, every player's 3P%, and the title and MVP odds are
+  exactly what the app knew the morning after that day;
+- the odds trend lines stop at that moment, so no later movement shows;
+- the 3P% page shows the *next* day's matchups (the games you are about to watch).
+
+The start screen lists only days that were saved. If you watched through a day that is not listed,
+pick the closest earlier one. The header pill (*Live*, *To Nov 7* or *Demo data*) shows the current
+choice; tap it to change. Links between the dashboard and the 3P% page keep the choice.
+
+Rules that keep snapshots spoiler-safe:
+
+- A snapshot is only written when every game of that day is final and the next day's games have not
+  started. A refresh in the middle of a game night does not write one.
+- A later refresh for the same day replaces it. That is how the hourly catch-up fixes a morning when
+  ESPN's season totals still lagged; if they never catch up before 14:00, that day's ratings miss
+  the last games for a few teams, and the team sheet says so.
+- Days before you installed NBAViz cannot be recovered, because ESPN only offers season-to-date totals.
+
+Storage is small: about 37 KB per day compressed, roughly 6 MB for a whole regular season. Snapshots
+are kept until you delete them; removing a file simply removes that day from the list.
 
 ## Reading the diamond
 
@@ -110,10 +146,14 @@ pip install -r requirements.txt
 python3 app.py
 ```
 
-Open `http://localhost:5003`. On the first start the app fetches the season so far (about one to two
-minutes); until then the page says the first refresh is still running and checks again by itself.
-Open `http://localhost:5003/?demo=1` to look around with made-up data straight away (team logos
-appear once the first refresh has downloaded them).
+Open `http://localhost:5003` and pick *Live*, *Up to a date* or *Demo*. On the first start the app
+fetches the season so far (about one to two minutes); until then the page says the first refresh is
+still running and checks again by itself. *Demo* works straight away (team logos appear once the first
+refresh has downloaded them). The first snapshot for *Up to a date* is saved by the first refresh that
+runs after a complete game night.
+
+Adding `?live=1`, `?date=YYYY-MM-DD` or `?demo=1` to a URL skips the start screen, which is handy for
+bookmarks.
 
 You can also refresh by hand:
 
@@ -170,10 +210,11 @@ WantedBy=multi-user.target
 
 | Path | What |
 |---|---|
-| `/` | Dashboard (`?demo=1` for demo data, `?live=1` to switch back) |
-| `/threes` | Spoiler-free 3-point page (`#BOS-NYK` preselects teams) |
-| `/api/dashboard` | Everything the dashboard shows, as JSON |
-| `/api/threes` | Rosters with 3PM/3PA, team 3P%, today's matchups. No results of any kind |
+| `/` | Dashboard; asks live / up to a date / demo unless `?live=1`, `?date=YYYY-MM-DD` or `?demo=1` is given |
+| `/threes` | Spoiler-free 3-point page, same choice (`#BOS-NYK` preselects teams) |
+| `/api/dates` | Saved days you can pick (newest first) and how far live data goes |
+| `/api/dashboard` | Everything the dashboard shows, as JSON (`?date=` or `?demo=1` as above) |
+| `/api/threes` | Rosters with 3PM/3PA, team 3P% and matchups (today's, or the day after `?date=`). No results of any kind |
 | `/api/status` | Refresh schedule status |
 | `/img/logos/…`, `/img/heads/…` | Cached team logos and player headshots |
 
@@ -192,8 +233,9 @@ stop on HTTP 429. Basketball-Reference is **not** scraped: it serves automated c
 challenge, and its data-use policy asks people not to build sites on scraped data. stats.nba.com is
 not used either, because it is unreliable from home and cloud IP addresses.
 
-Every refresh also writes a small daily snapshot (`data/snapshots/YYYY-MM-DD.json`) of ratings and
-odds, for trend charts later.
+Each refresh also saves the day's snapshot (see [Live or up to a date](#live-or-up-to-a-date)) and
+merges the fetched odds histories into `data/cache/odds_history.json`, so a past date can still draw
+the trend for candidates that have since left the top six.
 
 ## Project layout
 
@@ -205,10 +247,11 @@ demo.py             spoiler-free demo data
 templates/          index.html (dashboard), threes.html (3P% page)
 static/app.js       dashboard: diamond, ladder, leaders, odds, sheets
 static/threes.js    spoiler-free 3P% page
+static/gate.js      start screen: live, up to a date, or demo (shared by both pages)
 static/tpchart.js   the 3P% chart shared by both pages
 static/app.css      styles, light and dark
 static/sw.js        service worker (network first, offline fallback)
-data/               generated: caches, images, dashboard.json (git-ignored)
+data/               generated, git-ignored: dashboard.json, snapshots/, caches, images
 ```
 
 ## Disclaimer

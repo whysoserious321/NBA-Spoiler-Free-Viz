@@ -6,7 +6,7 @@
   var SERIES = ['--s1', '--s2', '--s3', '--s4', '--s5'];
   var S = {
     data: null, teams: {}, players: {}, ranks: {},
-    demo: false, tab: 'ratings',
+    demo: false, choice: null, tab: 'ratings',
     view: 'diamond', mode: 'raw', conf: 'all', stat: 0,
     range: { mvp: 'all', title: '1m' },
     sel: null, width: window.innerWidth,
@@ -18,7 +18,7 @@
   var sheetBody = document.getElementById('sheet-body');
   var backdrop = document.getElementById('sheet-backdrop');
   var meta = document.getElementById('meta');
-  var demoPill = document.getElementById('demo-pill');
+  var modePill = document.getElementById('mode-pill');
 
   /* ------------------------------------------------------------ helpers */
 
@@ -164,21 +164,22 @@
     }
   }
   var backPending = false, backTimer = null, afterBack = null, navDuringBack = null;
+  // Runs once our own back() has landed (or after the safety timeout): any navigation
+  // that arrived meanwhile is applied now, exactly once.
   function finishBack() {
     backPending = false;
     clearTimeout(backTimer);
-    var f = afterBack;
+    var f = afterBack, want = navDuringBack;
     afterBack = null;
-    if (f) f();
+    navDuringBack = null;
+    if (want) {
+      if (location.hash !== want) location.hash = want;   // hashchange will route it
+      else { closeSheet(true); route(false); }
+    } else if (f) f();
   }
   window.addEventListener('popstate', function () {
-    if (backPending) {
-      // our own back() just landed; if the user navigated meanwhile, put them back where they went
-      var want = navDuringBack;
-      navDuringBack = null;
-      finishBack();
-      if (want && location.hash !== want) location.hash = want;
-    } else if (sheetOpen) closeSheet(true);
+    if (backPending) finishBack();
+    else if (sheetOpen) closeSheet(true);
   });
   document.querySelector('.tabbar').addEventListener('click', function (e) {
     var a = e.target.closest('a[data-tab]');
@@ -218,18 +219,20 @@
 
   /* ---------------------------------------------------------- data + nav */
 
-  (function initDemo() {
-    var q = new URLSearchParams(location.search);
-    if (q.get('demo') === '1') store.set('nbaviz-demo', '1');
-    if (q.get('live') === '1') store.set('nbaviz-demo', null);
-    if (q.has('demo') || q.has('live')) {
-      try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) { /* ignore */ }
-    }
-    S.demo = store.get('nbaviz-demo') === '1';
-  })();
+  // What to show (live, up to a saved date, or demo) is chosen on the start screen.
+  function start(choice) {
+    S.choice = choice;
+    S.demo = choice.mode === 'demo';
+    closeSheet();
+    var ext = $('.tabbar a.ext');
+    if (ext) ext.setAttribute('href', '/threes' + NBAGate.linkQuery(choice));
+    main.innerHTML = '<div class="skeleton" aria-hidden="true"><div></div><div></div><div></div><div></div></div>';
+    load();
+  }
+  function changeData() { NBAGate.ask(start, { cancelable: true }); }
 
   function load() {
-    fetch('/api/dashboard' + (S.demo ? '?demo=1' : ''), { cache: 'no-cache' })
+    fetch('/api/dashboard' + NBAGate.query(S.choice), { cache: 'no-cache' })
       .then(function (r) {
         return r.json().catch(function () { throw new Error('The server answered with HTTP ' + r.status + '. Is NBAViz running?'); })
           .then(function (j) {
@@ -260,23 +263,16 @@
   }
 
   function renderHeader() {
-    var d = S.data;
-    demoPill.hidden = !S.demo;
-    if (S.demo) {
-      meta.textContent = d.season + ' · made-up numbers';
-    } else {
-      var through = d.through ? 'through ' + dateShort(new Date(d.through + 'T12:00:00')) : '';
-      meta.textContent = [d.season, through, 'updated ' + relTime(d.generated)].filter(Boolean).join(' · ');
-    }
+    var d = S.data, pill = NBAGate.pill(S.choice);
+    modePill.textContent = pill.text;
+    modePill.className = 'mode-pill ' + pill.cls;
+    modePill.hidden = false;
+    var through = d.through ? 'through ' + dateShort(new Date(d.through + 'T12:00:00')) : '';
+    if (S.choice.mode === 'demo') meta.textContent = d.season + ' · made-up numbers';
+    else if (S.choice.mode === 'date') meta.textContent = d.season + ' · games ' + through + ' only';
+    else meta.textContent = [d.season, through, 'updated ' + relTime(d.generated)].filter(Boolean).join(' · ');
   }
-  demoPill.addEventListener('click', function () {
-    if (confirm('Switch to live data?\n\nIt shows the latest results, including games you may not have watched yet.')) {
-      store.set('nbaviz-demo', null);
-      S.demo = false;
-      closeSheet();
-      load();
-    }
-  });
+  modePill.addEventListener('click', changeData);
 
   function route(initial) {
     var parts = location.hash.replace(/^#/, '').split('/');
@@ -305,7 +301,7 @@
   }
   window.addEventListener('hashchange', function () {
     if (!S.data) return;
-    if (backPending) navDuringBack = location.hash;  // a sheet-close back() is still in flight
+    if (backPending) { navDuringBack = location.hash; return; }   // handled once our back() lands
     closeSheet(true);
     route(false);
   });
@@ -316,9 +312,10 @@
     main.innerHTML = '<div class="view"></div>';
     var v = main.firstChild;
     ({ ratings: renderRatings, leaders: renderLeaders, mvp: renderMVP, title: renderTitle })[S.tab](v);
-    v.insertAdjacentHTML('beforeend', '<p class="credit">' + (S.demo
-      ? 'Demo data: every number and player here is made up. <button type="button" data-act="live">Show live data</button>'
-      : 'Data: ESPN · Polymarket. Ratings computed by NBAViz. <button type="button" data-act="demo">Spoiler-free demo</button>') + '</p>');
+    var credit = S.choice.mode === 'demo' ? 'Demo data: every number and player here is made up.'
+      : S.choice.mode === 'date' ? 'Showing only games through ' + NBAGate.day(S.choice.date, true) + '. Data: ESPN · Polymarket.'
+        : 'Data: ESPN · Polymarket. Ratings computed by NBAViz.';
+    v.insertAdjacentHTML('beforeend', '<p class="credit">' + credit + ' <button type="button" data-act="gate">Change</button></p>');
     $$('.tabbar a').forEach(function (a) {
       if (a.getAttribute('data-tab') === S.tab) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
@@ -327,11 +324,7 @@
 
   main.addEventListener('click', function (e) {
     var act = e.target.closest('[data-act]');
-    if (act) {
-      if (act.getAttribute('data-act') === 'demo') { store.set('nbaviz-demo', '1'); S.demo = true; load(); }
-      else demoPill.click();
-      return;
-    }
+    if (act) { changeData(); return; }
     var segBtn = e.target.closest('.seg button');
     if (segBtn) return onControl(segBtn.parentNode.getAttribute('data-ctl'), segBtn.getAttribute('data-val'), segBtn);
     var chip = e.target.closest('.chip[data-conf]');
@@ -1176,7 +1169,7 @@
       return p ? { id: id, name: p.name, short: p.short, tpm: p.tpm, tpa: p.tpa } : null;
     }).filter(Boolean);
     return window.tpChart(t, list, S.data.league.tp, { interactive: true }) +
-      '<p class="foot"><a class="inline-link" href="/threes#' + t.abbr + '">Open the spoiler-free 3P% page \u2197</a> ' +
+      '<p class="foot"><a class="inline-link" href="/threes' + NBAGate.linkQuery(S.choice) + '#' + t.abbr + '">Open the spoiler-free 3P% page \u2197</a> ' +
       '(only 3-point numbers, no records, ratings or odds).</p>';
   }
 
@@ -1228,11 +1221,13 @@
     var onScheme = function () { if (S.data) render(); };
     if (mq.addEventListener) mq.addEventListener('change', onScheme); else if (mq.addListener) mq.addListener(onScheme);
   }
-  setInterval(function () { if (S.data && !S.demo) renderHeader(); }, 60000);
+  setInterval(function () { if (S.data && S.choice && S.choice.mode === 'live') renderHeader(); }, 60000);
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () { navigator.serviceWorker.register('/sw.js').catch(function () { /* optional */ }); });
   }
 
-  load();
+  // Ask first (unless the URL already says live / a date / demo), then load.
+  var fromUrl = NBAGate.fromUrl();
+  if (fromUrl) start(fromUrl); else NBAGate.ask(start);
 })();

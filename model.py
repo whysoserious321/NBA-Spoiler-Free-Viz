@@ -18,6 +18,7 @@ average to zero. ORtg/A = lg + o_i and
 DRtg/A = lg + d_i: what the team would post against a league-average schedule.
 """
 
+import json
 from collections import defaultdict
 
 import numpy as np
@@ -237,12 +238,12 @@ def build(games, teams_meta, season, label, norm_name):
 
 
 def snapshot(dash):
-    """Small daily record for future trend charts."""
-    return {
-        'through': dash['through'],
-        'generated': dash.get('generated'),
-        'teams': {t['abbr']: [t['w'], t['l'], t['ortg'], t['drtg'], t['ortg_a'], t['drtg_a']]
-                  for t in dash['teams']},
-        'title': {o['name']: round(o['prob'], 4) for o in (dash['odds'].get('title') or {}).get('outcomes', [])},
-        'mvp': {o['name']: round(o['prob'], 4) for o in (dash['odds'].get('mvp') or {}).get('outcomes', [])},
-    }
+    """The dashboard as saved for one game day: everything except the odds price
+    histories (kept once in the odds archive) and image URLs."""
+    snap = json.loads(json.dumps(dash))
+    for key in ('title', 'mvp'):
+        for o in (snap['odds'].get(key) or {}).get('outcomes', []):
+            o.pop('history', None)
+            o.pop('image', None)
+    snap.pop('requests', None)
+    return snap

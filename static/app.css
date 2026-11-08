@@ -98,13 +98,67 @@ img { display: block; }
 .brand-mark { width: 30px; height: 30px; color: var(--accent); flex: none; }
 .brand h1 { margin: 0; font-size: 18px; line-height: 1.1; font-weight: 750; letter-spacing: -.01em; }
 .meta { margin: 1px 0 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.demo-pill {
+.mode-pill {
   flex: none; border: 0; cursor: pointer;
-  padding: 6px 11px; border-radius: 999px;
-  background: #fab219; color: #0b0b0b;
-  font-size: 12px; font-weight: 700; letter-spacing: .02em;
+  padding: 6px 11px; border-radius: 999px; min-height: 30px;
+  background: var(--surface-2); color: var(--ink);
+  font-size: 12px; font-weight: 700; letter-spacing: .02em; white-space: nowrap;
 }
-.demo-pill::before { content: "●"; margin-right: 6px; font-size: 9px; vertical-align: 1px; }
+.mode-pill::before { content: "●"; margin-right: 6px; font-size: 9px; vertical-align: 1px; }
+.mode-pill.live::before { color: var(--up-mark); }
+.mode-pill.date { background: var(--accent); color: #fff; }
+.mode-pill.demo { background: #fab219; color: #0b0b0b; }
+
+/* ---------------------------------------------------------- start screen */
+body.gate-open { overflow: hidden; }
+.gate {
+  position: fixed; inset: 0; z-index: 80; overflow-y: auto;
+  display: flex; align-items: center; justify-content: center;
+  padding: calc(16px + var(--safe-t)) 16px calc(16px + var(--safe-b));
+  background: var(--page);
+}
+.gate.over { background: rgba(0, 0, 0, .5); }
+.gate-card {
+  width: 100%; max-width: 440px; margin: auto;
+  background: var(--surface); border: 1px solid var(--ring); border-radius: 20px;
+  padding: 22px 18px 16px; box-shadow: 0 12px 40px rgba(0,0,0,.18);
+}
+.gate-card h2 { margin: 0 0 6px; font-size: 22px; font-weight: 750; letter-spacing: -.01em; }
+.gate-sub { margin: 0 0 16px; font-size: 14px; color: var(--ink-2); }
+.gate-load { margin: 8px 0; color: var(--muted); text-align: center; }
+.gate-btn {
+  display: block; width: 100%; padding: 0; margin: 0 0 10px; text-align: left;
+  border: 0; background: none; cursor: pointer; border-radius: 14px;
+}
+.gate-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gate-dated { cursor: default; }
+.gate-opt {
+  display: flex; gap: 12px; align-items: flex-start;
+  border: 1px solid var(--ring); background: var(--surface-2); border-radius: 14px; padding: 14px;
+}
+.gate-btn:hover .gate-opt { border-color: var(--axis); }
+.gate-opt.last { border-color: var(--accent); }
+.gate-txt { flex: 1; min-width: 0; }
+.gate-txt b { display: block; font-size: 16px; font-weight: 700; color: var(--ink); }
+.gate-txt small { display: block; margin-top: 2px; font-size: 13px; color: var(--ink-2); }
+.gate-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; flex: none; }
+.gate-dot.live { background: var(--up-mark); }
+.gate-dot.date { background: var(--accent); }
+.gate-dot.demo { background: #fab219; }
+.gate-row { display: flex; gap: 8px; margin-top: 10px; }
+.gate-row select {
+  flex: 1; min-width: 0; min-height: 42px; padding: 0 10px; border-radius: 10px;
+  border: 1px solid var(--ring); background: var(--surface); color: var(--ink); font: inherit; font-size: 15px;
+}
+.gate-go {
+  min-height: 42px; padding: 0 18px; border: 0; border-radius: 10px; cursor: pointer;
+  background: var(--accent); color: #fff; font-weight: 700;
+}
+.gate-none { color: var(--muted) !important; }
+.gate-cancel {
+  display: block; margin: 2px auto 0; padding: 8px 12px; border: 0; background: none; cursor: pointer;
+  color: var(--accent); font-weight: 600;
+}
 
 /* ------------------------------------------------------------------ main */
 main {

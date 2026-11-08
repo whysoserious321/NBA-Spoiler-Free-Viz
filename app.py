@@ -15,13 +15,17 @@ Only one process runs the scheduler (file lock), even if the app is started twic
     python3 app.py                         # http://<pi>:5003
     FLASK_APP=app.py flask run --port 5003 # the way WebServers/Start.sh runs it
 
-Add ?demo=1 to the URL for made-up, spoiler-free data (?live=1 switches back).
+Every page load asks: live data, everything only up to a saved game day, or
+demo data (static/gate.js). The data endpoints take the answer as ?date=YYYY-MM-DD
+(served from data/snapshots/) or ?demo=1; no parameter means live. Page URLs
+with ?live=1, ?date=... or ?demo=1 skip the question.
 Set NBAVIZ_NO_REFRESH=1 to serve the existing files without refreshing.
 """
 
 import fcntl
 import logging
 import os
+import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -40,6 +44,7 @@ CATCHUP_UNTIL = 14
 PORT = int(os.environ.get('NBAVIZ_PORT', 5003))
 
 app = Flask(__name__)
+app.json.sort_keys = False
 log = logging.getLogger('nbaviz')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(message)s')
 
@@ -153,7 +158,7 @@ def index():
 
 def _asset_version():
     return int(max(os.path.getmtime(os.path.join(BASE_DIR, 'static', f))
-                   for f in ('app.js', 'app.css', 'tpchart.js', 'threes.js')))
+                   for f in ('app.js', 'app.css', 'tpchart.js', 'threes.js', 'gate.js')))
 
 
 @app.route('/threes')
@@ -175,32 +180,106 @@ def _load_json(path):
     return hit[1]
 
 
+# ------------------------------------------------------------------ data sources
+# Every data endpoint serves one of three sources:
+#   live   the latest refresh                       (no parameter)
+#   date   the snapshot saved for games through a day  (?date=YYYY-MM-DD)
+#   demo   made-up numbers                             (?demo=1)
+
+DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 DEMO_GAMES = [('BOS', 'NYK'), ('GSW', 'LAL'), ('PHX', 'DEN'), ('MIA', 'ORL')]
+_snap_cache = {}
 
 
-def _todays_games():
-    """Today's matchups (US date) from the cached scoreboard: team pairs only, never scores."""
-    today = datetime.now(scrape.US_EAST).date()
-    day = scrape.read_json(os.path.join(scrape.DAY_DIR, today.strftime('%Y%m%d') + '.json')) or {}
-    games = []
-    for ev in day.get('events', []):
-        if ev.get('away') and ev.get('home'):
-            games.append({'away': ev['away']['abbr'], 'home': ev['home']['abbr']})
-    return today.isoformat(), games
+class ApiError(Exception):
+    def __init__(self, status, message):
+        super().__init__(message)
+        self.status = status
+
+
+@app.errorhandler(ApiError)
+def _api_error(e):
+    return jsonify({'error': str(e)}), e.status
+
+
+def _snapshot_dates():
+    try:
+        names = os.listdir(scrape.SNAP_DIR)
+    except OSError:
+        return []
+    days = (n[:-len('.json.gz')] for n in names if n.endswith('.json.gz'))
+    return sorted((d for d in days if DATE_RE.match(d)), reverse=True)
+
+
+def _load_snapshot(day):
+    path = os.path.join(scrape.SNAP_DIR, f'{day}.json.gz')
+    mtime = os.path.getmtime(path)
+    hit = _snap_cache.get(day)
+    if not hit or hit[0] != mtime:
+        hit = (mtime, scrape.read_snapshot(day))
+        _snap_cache[day] = hit
+    return hit[1]
+
+
+def _dated(day):
+    """The dashboard as saved for games through `day`, with odds price history
+    cut off at the moment it was saved, so no later movement shows."""
+    snap = _load_snapshot(day)
+    cutoff = datetime.fromisoformat(snap['generated']).timestamp()
+    archive = scrape.read_json(scrape.ODDS_ARCHIVE, {}) or {}
+    odds = {}
+    for key, ev in (snap.get('odds') or {}).items():
+        if not ev:
+            odds[key] = ev
+            continue
+        hist = archive.get(key) or {}
+        outs = []
+        for i, o in enumerate(ev.get('outcomes', [])):
+            o = dict(o)
+            if i < scrape.HISTORY_TOP_N:
+                o['history'] = [p for p in hist.get(o['name'], []) if p[0] <= cutoff]
+            outs.append(o)
+        odds[key] = {**ev, 'outcomes': outs}
+    return {**snap, 'odds': odds, 'asof': day}
+
+
+def _source():
+    """(data, mode, day) for the request's ?demo / ?date / live choice."""
+    if request.args.get('demo') == '1':
+        if not os.path.exists(DEMO_FILE):
+            import demo
+            demo.write()
+        return _load_json(DEMO_FILE), 'demo', None
+    day = request.args.get('date')
+    if day:
+        if not DATE_RE.match(day) or day not in _snapshot_dates():
+            raise ApiError(404, 'No saved data for that date.')
+        return _dated(day), 'date', day
+    if not os.path.exists(scrape.DASHBOARD):
+        raise ApiError(503, 'No data yet - the first refresh is still running.')
+    d = _load_json(scrape.DASHBOARD)
+    if not d:
+        raise ApiError(503, 'The data file could not be read; try again in a moment.')
+    return d, 'live', None
+
+
+def _games_on(day):
+    """Matchups on a US date from the cached scoreboard: team pairs only, never scores."""
+    data = scrape.read_json(os.path.join(scrape.DAY_DIR, day.strftime('%Y%m%d') + '.json')) or {}
+    return [{'away': ev['away']['abbr'], 'home': ev['home']['abbr']}
+            for ev in data.get('events', []) if ev.get('away') and ev.get('home')]
+
+
+@app.route('/api/dates')
+def api_dates():
+    """Days you can pick in the start screen (newest first) and how far live data goes."""
+    live = _load_json(scrape.DASHBOARD) if os.path.exists(scrape.DASHBOARD) else None
+    return jsonify({'dates': _snapshot_dates(), 'live_through': (live or {}).get('through')})
 
 
 @app.route('/api/threes')
 def api_threes():
-    demo_mode = request.args.get('demo') == '1'
-    path = DEMO_FILE if demo_mode else scrape.DASHBOARD
-    if demo_mode and not os.path.exists(DEMO_FILE):
-        import demo
-        demo.write()
-    if not os.path.exists(path):
-        return jsonify({'error': 'No data yet - the first refresh is still running.'}), 503
-    d = _load_json(path)
-    if not d:
-        return jsonify({'error': 'The data file could not be read; try again in a moment.'}), 503
+    d, mode, day = _source()
     players = d.get('players', {})
     teams = []
     for t in sorted(d['teams'], key=lambda t: t['name']):
@@ -211,12 +290,17 @@ def api_threes():
             'players': [{'name': p['name'], 'short': p.get('short'), 'pos': p.get('pos'),
                          'tpm': p['tpm'], 'tpa': p['tpa']} for p in roster],
         })
-    if demo_mode:
+    if mode == 'demo':
         games_date, games = None, [{'away': a, 'home': h} for a, h in DEMO_GAMES]
+    elif mode == 'date':
+        nxt = datetime.fromisoformat(day).date() + timedelta(days=1)   # the games you are about to watch
+        games_date, games = nxt.isoformat(), _games_on(nxt)
     else:
-        games_date, games = _todays_games()
+        today = datetime.now(scrape.US_EAST).date()
+        games_date, games = today.isoformat(), _games_on(today)
     return jsonify({
-        'demo': demo_mode, 'season': d.get('season'), 'generated': d.get('generated'),
+        'demo': mode == 'demo', 'mode': mode, 'asof': day,
+        'season': d.get('season'), 'generated': d.get('generated'), 'through': d.get('through'),
         'league_tp': (d.get('league') or {}).get('tp'),
         'games_date': games_date, 'games': games, 'teams': teams,
     })
@@ -224,12 +308,11 @@ def api_threes():
 
 @app.route('/api/dashboard')
 def dashboard():
+    if request.args.get('date'):
+        d, _, _ = _source()
+        return jsonify(d)
     path = DEMO_FILE if request.args.get('demo') == '1' else scrape.DASHBOARD
-    if request.args.get('demo') == '1' and not os.path.exists(DEMO_FILE):
-        import demo
-        demo.write()
-    if not os.path.exists(path):
-        return jsonify({'error': 'No data yet - the first refresh is still running.'}), 503
+    _source()                                    # same checks and errors as the other modes
     return send_from_directory(os.path.dirname(path), os.path.basename(path),
                                mimetype='application/json', max_age=0)
 

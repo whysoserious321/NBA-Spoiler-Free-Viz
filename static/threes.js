@@ -6,8 +6,8 @@
 
   var main = document.getElementById('main');
   var meta = document.getElementById('meta');
-  var pill = document.getElementById('demo-pill');
-  var D = null, sel = [], demo = false;
+  var pill = document.getElementById('mode-pill');
+  var D = null, sel = [], choice = null;
 
   var store = {
     get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
@@ -33,16 +33,13 @@
   }
   function team(abbr) { return D.teams.filter(function (t) { return t.abbr === abbr; })[0]; }
 
-  // demo flag is shared with the dashboard (same browser storage key)
-  (function () {
-    var q = new URLSearchParams(location.search);
-    if (q.get('demo') === '1') store.set('nbaviz-demo', '1');
-    if (q.get('live') === '1') store.set('nbaviz-demo', null);
-    if (q.has('demo') || q.has('live')) {
-      try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) { /* ignore */ }
-    }
-    demo = store.get('nbaviz-demo') === '1';
-  })();
+  // Live, up to a saved date, or demo: chosen on the start screen (shared with the dashboard).
+  function start(c) {
+    choice = c;
+    main.innerHTML = '<div class="skeleton" aria-hidden="true"><div></div><div></div></div>';
+    load();
+  }
+  function changeData() { NBAGate.ask(start, { cancelable: true }); }
 
   function readSel() {
     var h = location.hash.replace(/^#/, '').toUpperCase();
@@ -55,7 +52,7 @@
   }
 
   function load() {
-    fetch('/api/threes' + (demo ? '?demo=1' : ''), { cache: 'no-cache' })
+    fetch('/api/threes' + NBAGate.query(choice), { cache: 'no-cache' })
       .then(function (r) {
         return r.json().catch(function () { throw new Error('The server answered with HTTP ' + r.status + '. Is NBAViz running?'); })
           .then(function (j) {
@@ -73,13 +70,19 @@
   }
 
   function render(scrollTo) {
-    pill.hidden = !demo;
-    meta.textContent = (D.season || '') + ' · ' + (demo ? 'made-up numbers' : 'season to date, updated ' + relTime(D.generated));
+    var p = NBAGate.pill(choice);
+    pill.textContent = p.text;
+    pill.className = 'mode-pill ' + p.cls;
+    pill.hidden = false;
+    meta.textContent = (D.season || '') + ' · ' + (choice.mode === 'demo' ? 'made-up numbers'
+      : choice.mode === 'date' ? 'games through ' + NBAGate.day(choice.date) + ' only'
+        : 'season to date, updated ' + relTime(D.generated));
     var html = '<section class="card"><div class="card-h"><p class="kicker">Spoiler-free</p><h2>Pick one or two teams</h2>' +
       '<p>Only 3-point shooting lives on this page: no scores, records, ratings or odds.</p></div>';
     if (D.games && D.games.length) {
-      var label = D.games_date ? new Date(D.games_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : 'Today';
-      html += '<p class="kicker" style="margin-top:2px">Games ' + esc(label) + ' (US date)</p><div class="chips game-chips">' +
+      var label = !D.games_date ? 'Games'
+        : (choice.mode === 'date' ? 'Next games, ' : 'Games today, ') + NBAGate.day(D.games_date, true) + ' (US date)';
+      html += '<p class="kicker" style="margin-top:2px">' + esc(label) + '</p><div class="chips game-chips">' +
         D.games.map(function (g) {
           var on = sel.length === 2 && sel.indexOf(g.away) >= 0 && sel.indexOf(g.home) >= 0;
           return '<button type="button" class="chip" data-game="' + g.away + '-' + g.home + '" aria-pressed="' + on + '">' +
@@ -100,10 +103,12 @@
         '<div><h3>' + esc(t.name) + '</h3><p>Season 3-point shooting, sorted by attempts</p></div></div>' +
         window.tpChart(t, t.players, D.league_tp, { heading: false }) + '</section>';
     });
-    html += '<p class="credit">Season totals through the last update (daily, 08:00). Data: ESPN.<br>' +
-      (demo ? 'Demo data: every number and player here is made up. <button type="button" data-act="live">Show live data</button>'
-        : '<a href="/" class="inline-link">Full dashboard ↗</a> (has results, ratings and odds) · <button type="button" data-act="demo">Demo</button>') +
-      '</p>';
+    html += '<p class="credit">' + (choice.mode === 'demo' ? 'Demo data: every number and player here is made up.'
+      : choice.mode === 'date' ? 'Season totals through the games of ' + NBAGate.day(choice.date, true) + ' only. Data: ESPN.'
+        : 'Season totals through the last update (daily, 08:00). Data: ESPN.') +
+      ' <button type="button" data-act="gate">Change</button><br>' +
+      '<a href="/' + NBAGate.linkQuery(choice) + '" class="inline-link">Full dashboard ↗</a> (results, ratings and odds' +
+      (choice.mode === 'date' ? ', also only up to that date)' : ')') + '</p>';
     main.innerHTML = '<div class="view">' + html + '</div>';
     if (scrollTo) {
       var el = document.getElementById('tp-' + scrollTo);
@@ -124,17 +129,10 @@
       writeSel();
       render(sel[0]);
     } else if (act) {
-      if (act.getAttribute('data-act') === 'demo') { store.set('nbaviz-demo', '1'); demo = true; load(); }
-      else pill.click();
+      changeData();
     }
   });
-  pill.addEventListener('click', function () {
-    if (confirm('Switch to live data?\n\nThis page only shows 3-point numbers, but they include games up to the last update.')) {
-      store.set('nbaviz-demo', null);
-      demo = false;
-      load();
-    }
-  });
+  pill.addEventListener('click', changeData);
   window.addEventListener('hashchange', function () { if (D) { readSel(); render(); } });
   if (window.matchMedia) {
     var mq = matchMedia('(prefers-color-scheme: dark)');
@@ -144,5 +142,6 @@
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () { navigator.serviceWorker.register('/sw.js').catch(function () { /* optional */ }); });
   }
-  load();
+  var fromUrl = NBAGate.fromUrl();
+  if (fromUrl) start(fromUrl); else NBAGate.ask(start);
 })();

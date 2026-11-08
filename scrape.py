@@ -19,14 +19,20 @@ Cloudflare bot challenge and cdn.nba.com/stats.nba.com JSON is blocked from
 this IP, so neither is used. The raw and opponent-adjusted ratings that
 Basketball-Reference publishes are computed here instead (see model.py).
 
-A normal refresh makes about 30 requests (most of them Polymarket price
+A normal refresh makes about 20 requests (most of them Polymarket price
 history); the first run of a season also fetches each past scoreboard once.
+
+After a complete game night the refresh also saves a snapshot of the whole
+dashboard for that day (data/snapshots/YYYY-MM-DD.json.gz, ~37 KB), which is
+what the "up to a date" choice serves, and merges the odds price histories
+into data/cache/odds_history.json.
 
 Run by hand:   python3 scrape.py            (refresh everything)
                python3 scrape.py --offline  (rebuild from cache, no requests)
 The Flask app also calls refresh() on a background timer.
 """
 
+import gzip
 import json
 import os
 import re
@@ -48,6 +54,7 @@ DAY_DIR = os.path.join(CACHE_DIR, 'days')
 IMG_DIR = os.path.join(DATA_DIR, 'img')
 SNAP_DIR = os.path.join(DATA_DIR, 'snapshots')
 DASHBOARD = os.path.join(DATA_DIR, 'dashboard.json')
+ODDS_ARCHIVE = os.path.join(CACHE_DIR, 'odds_history.json')
 
 ESPN = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba'
 ESPN_STATS = 'https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/statistics'
@@ -206,6 +213,7 @@ def fetch_day(f, d, teams):
         events.append({
             'id': e['id'], 'date': d.isoformat(),
             'final': done and st.get('name') == 'STATUS_FINAL',
+            'state': st.get('state'),                  # pre / in / post
             'home': sides.get('home'), 'away': sides.get('away'),
         })
     out = {'date': d.isoformat(), 'complete': complete, 'events': events}
@@ -376,6 +384,65 @@ def pm_head_key(name):
     return 'pm-' + re.sub(r'[^a-z0-9]+', '-', norm_name(name)).strip('-')
 
 
+# -------------------------------------------------------------------- snapshots
+
+def snapshot_allowed(events, through):
+    """A snapshot is "everything through the games of `through`". Only save one
+    when that day is completely finished and the next day's games have not
+    started, so a refresh in the middle of a game night can never produce a
+    half-finished day (or odds that already react to later games)."""
+    if not through:
+        return False, 'no finished games yet'
+    for e in events:
+        if e['date'] == through and not (e.get('final') or e.get('state') == 'post'):
+            return False, f'not every game on {through} is finished'
+        if e['date'] > through and (e.get('state') or 'pre') != 'pre':
+            return False, f'games after {through} have already started'
+    return True, ''
+
+
+def write_snapshot(dash):
+    """data/snapshots/<through>.json.gz - the whole dashboard minus odds price
+    histories (those live once in the odds archive). A later refresh for the
+    same day (e.g. the catch-up once ESPN's totals include every game) replaces it."""
+    path = os.path.join(SNAP_DIR, f"{dash['through']}.json.gz")
+    os.makedirs(SNAP_DIR, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=SNAP_DIR, prefix='.tmp_', suffix='.gz')
+    try:
+        with os.fdopen(fd, 'wb') as raw, gzip.GzipFile(fileobj=raw, mode='wb', mtime=0) as gz:
+            gz.write(json.dumps(model.snapshot(dash), separators=(',', ':')).encode())
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return path
+
+
+def read_snapshot(date_str):
+    with gzip.open(os.path.join(SNAP_DIR, f'{date_str}.json.gz'), 'rt') as fh:
+        return json.load(fh)
+
+
+def archive_odds_history(dash):
+    """Keep every price history we have ever fetched, per outcome, so a past date
+    can draw its odds trend even for candidates that have since left the top 6."""
+    arch = read_json(ODDS_ARCHIVE, {}) or {}
+    for key in ('title', 'mvp'):
+        ev = dash['odds'].get(key) or {}
+        bucket = arch.get(key) or {}
+        if bucket.get('_slug') != ev.get('slug'):      # a new season's market starts fresh
+            bucket = {'_slug': ev.get('slug')}
+        for o in ev.get('outcomes', []):
+            if not o.get('history'):
+                continue
+            merged = {int(t): p for t, p in bucket.get(o['name'], [])}
+            merged.update({int(t): p for t, p in o['history']})
+            bucket[o['name']] = [[t, merged[t]] for t in sorted(merged)]
+        arch[key] = bucket
+    write_json(ODDS_ARCHIVE, arch)
+
+
 # ---------------------------------------------------------------------- refresh
 
 def refresh(offline=False, log=print):
@@ -386,11 +453,12 @@ def refresh(offline=False, log=print):
     teams = read_json(os.path.join(CACHE_DIR, 'teams.json'), {}) or {}
 
     start, end = season_bounds(f, end_year)
-    games = []
+    games, events = [], []
     d = start
     while d <= min(today, end):
         day = (read_json(os.path.join(DAY_DIR, d.strftime('%Y%m%d') + '.json'))
                if offline else fetch_day(f, d, teams))
+        events += (day or {}).get('events', [])
         games += [e for e in (day or {}).get('events', []) if e.get('final')]
         d += timedelta(days=1)
     log(f'results: {len(games)} finished games')
@@ -442,7 +510,13 @@ def refresh(offline=False, log=print):
     dash['generated'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
     dash['requests'] = f.count
     write_json(DASHBOARD, dash)
-    write_json(os.path.join(SNAP_DIR, f'{today.isoformat()}.json'), model.snapshot(dash))
+    archive_odds_history(dash)
+    ok, why = snapshot_allowed(events, dash['through'])
+    if ok:
+        write_snapshot(dash)
+        log(f"saved snapshot for games through {dash['through']}")
+    else:
+        log(f'no snapshot saved: {why}')
     log(f'wrote dashboard.json: {len(games)} games, {f.count} requests, {time.time() - t0:.1f}s')
     return dash
 
