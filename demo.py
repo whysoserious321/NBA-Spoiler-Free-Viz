@@ -11,7 +11,7 @@ every player is invented.
 import math
 import os
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import model
 import scrape

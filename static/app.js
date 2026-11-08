@@ -253,10 +253,16 @@
       var i = S.data.leaders.stats.map(function (s) { return s.key; }).indexOf(arg);
       if (i >= 0) S.stat = i;
     }
-    if (!initial && tab === S.tab && !openT && !openP) return;
+    if (!initial && tab === S.tab && !openT && !openP) {
+      // same tab: only a sub-route changed (e.g. #leaders/ts, #ratings/ladder)
+      if (tab === 'leaders' && arg) goStat(S.stat, true);
+      else if (tab === 'ratings' && arg) render();
+      return;
+    }
+    var newTab = tab !== S.tab;
     S.tab = tab;
-    render();
-    if (!initial) window.scrollTo(0, 0);
+    if (initial || newTab || !$('.view', main)) render();
+    if (!initial && newTab) window.scrollTo(0, 0);
     if (openT && S.teams[openT]) openTeam(openT);
     if (openP && S.players[openP]) openPlayer(openP);
   }
@@ -1089,7 +1095,7 @@
     if (!t) return;
     var odds = (S.data.odds.title && S.data.odds.title.outcomes || []).filter(function (o) { return o.abbr === abbr; })[0];
     function row(label, k, note) {
-      return '<tr><td>' + label + (note ? ' <span class="rk" style="text-align:left">' + note + '</span>' : '') + '</td>' +
+      return '<tr><td>' + label + (note ? '<span class="rk note">' + note + '</span>' : '') + '</td>' +
         '<td><b>' + (k === 'nrtg' ? sign(t[k + '_a']) : t[k + '_a'].toFixed(1)) + '</b> <span class="rk">' + ordinal(t.rk[k + '_a']) + '</span></td>' +
         '<td>' + (k === 'nrtg' ? sign(t[k]) : t[k].toFixed(1)) + ' <span class="rk">' + ordinal(t.rk[k]) + '</span></td></tr>';
     }

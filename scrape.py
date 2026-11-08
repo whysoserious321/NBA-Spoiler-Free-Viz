@@ -254,12 +254,15 @@ def fetch_team_totals(f, end_year):
 
 
 def fetch_players(f, end_year, qualified):
-    d = f.get(f'{ESPN_STATS}/byathlete', params={
-        'region': 'us', 'lang': 'en', 'contentorigin': 'espn',
-        'isqualified': 'true' if qualified else 'false', 'limit': 1000, 'page': 1,
-        'season': end_year, 'seasontype': 2, 'sort': 'offensive.avgPoints:desc'})
+    params = {'region': 'us', 'lang': 'en', 'contentorigin': 'espn',
+              'isqualified': 'true' if qualified else 'false', 'limit': 1000, 'page': 1,
+              'season': end_year, 'seasontype': 2, 'sort': 'offensive.avgPoints:desc'}
+    pages = [f.get(f'{ESPN_STATS}/byathlete', params=params)]
+    while params['page'] < (pages[-1].get('pagination') or {}).get('pages', 1) and params['page'] < 20:
+        params['page'] += 1
+        pages.append(f.get(f'{ESPN_STATS}/byathlete', params=params))
     out = []
-    for row in d.get('athletes', []):
+    for d, row in ((d, row) for d in pages for row in d.get('athletes', [])):
         a = row['athlete']
         s = _categories(d, row)
         out.append({
@@ -277,6 +280,10 @@ def fetch_players(f, end_year, qualified):
             'tpm': int(s.get('threePointFieldGoalsMade', 0)),
             'tpa': int(s.get('threePointFieldGoalsAttempted', 0)),
             'fg_pct': s.get('fieldGoalPct', 0),
+            # season totals, for exact percentages
+            'pts_tot': int(s.get('points', 0)),
+            'fga': int(s.get('fieldGoalsAttempted', 0)),
+            'fta': int(s.get('freeThrowsAttempted', 0)),
         })
     return out
 
@@ -406,6 +413,11 @@ def refresh(offline=False, log=print):
         cache_team_logos(f, teams)
 
     dash = model.build(games, teams, season, label=season_label(end_year), norm_name=norm_name)
+    if not dash['teams']:
+        # Before the first regular-season game (e.g. after the season rolls over in
+        # August) there is nothing to rate: keep serving the existing data.
+        log('no regular-season games with team totals yet; keeping the existing dashboard')
+        return read_json(DASHBOARD)
 
     if not offline:
         cache_headshots(f, dash['head_ids'])

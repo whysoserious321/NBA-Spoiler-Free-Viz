@@ -13,7 +13,8 @@ its own quality plus the average quality of the opponents it has faced,
   ORtg_i = lg + o_i + mean(d_j over opponents)
   DRtg_i = lg + d_i + mean(o_j over opponents)
 
-with sum(o) = sum(d) = 0, solved by least squares. ORtg/A = lg + o_i and
+solved exactly (least squares) with sum(o) = sum(d), i.e. adjusted net ratings
+average to zero. ORtg/A = lg + o_i and
 DRtg/A = lg + d_i: what the team would post against a league-average schedule.
 """
 
@@ -71,11 +72,12 @@ def adjust(raw_o, raw_d, opps, lg):
             r[idx[o]] += w
         rows.append(r)
         rhs.append(raw_d[t] - lg)
-    for block in (0, n):                         # sum(o) = 0, sum(d) = 0
-        r = np.zeros(2 * n)
-        r[block:block + n] = 10.0
-        rows.append(r)
-        rhs.append(0.0)
+    # The equations only fix o and d up to one shift (every o + c, every d - c),
+    # so exactly one constraint: adjusted net ratings average to zero (sum o = sum d).
+    r = np.zeros(2 * n)
+    r[:n], r[n:] = 1.0, -1.0
+    rows.append(r)
+    rhs.append(0.0)
     sol = np.linalg.lstsq(np.array(rows), np.array(rhs), rcond=None)[0]
     return ({t: lg + sol[idx[t]] for t in teams},
             {t: lg + sol[n + idx[t]] for t in teams})
@@ -149,15 +151,20 @@ def build(games, teams_meta, season, label, norm_name):
     by_name = {norm_name(p['name']): p['id'] for p in players_raw}
     players, rosters = {}, defaultdict(list)
     for p in players_raw:
-        shots = p['fga_g'] + 0.44 * p['fta_g']
+        # true shooting from season totals when present (per-game averages are rounded)
+        if p.get('fga') is not None and p.get('pts_tot') is not None:
+            pts_ts, shots = p['pts_tot'], p['fga'] + 0.44 * p['fta']
+        else:
+            pts_ts, shots = p['pts'], p['fga_g'] + 0.44 * p['fta_g']
         tp = 100 * p['tpm'] / p['tpa'] if p['tpa'] else None
         players[p['id']] = {
             'name': p['name'], 'short': p['short'], 'team': p['team'], 'pos': p['pos'],
             'gp': p['gp'], 'mpg': round(p['mpg'], 1),
             'pts': p['pts'], 'reb': p['reb'], 'ast': p['ast'], 'stl': p['stl'], 'blk': p['blk'],
-            'tpm_g': p['tpm_g'], 'tpa_g': p['tpa_g'], 'tpm': p['tpm'], 'tpa': p['tpa'],
+            'tpm_g': round(p['tpm'] / p['gp'], 2) if p['gp'] else p['tpm_g'],
+            'tpa_g': p['tpa_g'], 'tpm': p['tpm'], 'tpa': p['tpa'],
             'tp': round(tp, 1) if tp is not None else None,
-            'ts': round(100 * p['pts'] / (2 * shots), 1) if shots else None,
+            'ts': round(100 * pts_ts / (2 * shots), 1) if shots else None,
             'fga_g': p['fga_g'], 'q': p['id'] in qualified,
         }
         if p['gp'] > 0 and p['team']:
@@ -179,8 +186,9 @@ def build(games, teams_meta, season, label, norm_name):
                 continue
             if key == 'ts' and p['fga_g'] < TS_MIN_FGA:
                 continue
-            rows.append([pid, round(p[key], 1)])
-        rows.sort(key=lambda r: -r[1])
+            rows.append([pid, p[key]])
+        rows.sort(key=lambda r: -r[1])               # exact values, so ties break correctly
+        rows = [[pid, round(v, 1)] for pid, v in rows]
         head_ids.update(pid for pid, _ in rows[:HEADS_PER_STAT])
         leader_stats.append({'key': key, 'label': name, 'unit': unit, 'dec': dec, 'pct': pct,
                              'rows': rows})

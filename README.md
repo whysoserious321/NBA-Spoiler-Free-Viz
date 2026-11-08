@@ -86,7 +86,7 @@ the average quality of the opponents it has played:
 ```
 ORtg_i = lg + o_i + mean(d_j over opponents j)
 DRtg_i = lg + d_i + mean(o_j over opponents j)
-with Σo = Σd = 0, solved by least squares
+solved exactly, with Σo = Σd (adjusted net ratings average to zero)
 ```
 
 `ORtg/A = lg + o_i` and `DRtg/A = lg + d_i` are what the team would post against a league-average

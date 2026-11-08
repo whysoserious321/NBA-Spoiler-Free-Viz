@@ -75,7 +75,7 @@ def _refresh_once():
     status['running'] = True
     try:
         dash = scrape.refresh(log=log.info)
-        lagging = sum(1 for t in dash['teams'] if t['gp'] < t['w'] + t['l'])
+        lagging = sum(1 for t in (dash or {}).get('teams', []) if t['gp'] < t['w'] + t['l'])
         status['last_ok'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
         status['last_error'] = None
         result = 'lagging' if lagging else 'ok'
@@ -243,6 +243,12 @@ def image(kind, name):
     if kind not in ('logos', 'heads'):
         abort(404)
     return send_from_directory(os.path.join(scrape.IMG_DIR, kind), name, max_age=7 * 86400)
+
+
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(os.path.join(BASE_DIR, 'static', 'icons'), 'icon-192.png',
+                               mimetype='image/png', max_age=7 * 86400)
 
 
 @app.route('/sw.js')

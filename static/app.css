@@ -390,7 +390,12 @@ svg.diamond { -webkit-user-select: none; user-select: none; }
 .rtable th { font-size: 11px; font-weight: 600; color: var(--muted); text-align: right; padding: 0 0 6px; }
 .rtable th:first-child, .rtable td:first-child { text-align: left; }
 .rtable td { padding: 9px 0; border-top: 1px solid var(--grid); text-align: right; white-space: nowrap; }
-.rtable td:first-child { font-weight: 600; }
+.rtable td:first-child { font-weight: 600; white-space: normal; }
+.rtable .note { display: block; text-align: left; min-width: 0; font-weight: 500; }
+@media (max-width: 360px) {
+  .rtable { font-size: 13px; }
+  .rtable .rk { min-width: 24px; font-size: 10.5px; }
+}
 .rtable td b { font-weight: 700; }
 .rk { display: inline-block; min-width: 30px; font-size: 11px; color: var(--muted); text-align: right; }
 
