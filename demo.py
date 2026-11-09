@@ -176,6 +176,11 @@ def build(seed=11):
             'title': round(next(o['prob'] for o in title_out if o['abbr'] == abbr), 4),
             'roster': roster,
         })
+    seeds = model.conference_seeds({t['abbr']: (t['w'], t['l']) for t in team_rows},
+                                   {t['abbr']: t['conf'] for t in team_rows},
+                                   diff={t['abbr']: t['nrtg'] for t in team_rows})
+    for t in team_rows:
+        t['seed'] = seeds.get(t['abbr'])
     all_tpm = sum(p['tpm'] for p in players.values())
     all_tpa = sum(p['tpa'] for p in players.values())
     return {

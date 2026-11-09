@@ -15,7 +15,7 @@ is slow to update its season totals).
 
 <p align="center">
   <img src="docs/screenshots/start.png" width="200" alt="Start screen: live, up to a date, or demo">
-  <img src="docs/screenshots/diamond.png" width="200" alt="Net rating diamond">
+  <img src="docs/screenshots/diamond.png" width="200" alt="Net rating diamond with playoff-picture rings">
   <img src="docs/screenshots/ladder.png" width="200" alt="Net rating ladder">
   <img src="docs/screenshots/team.png" width="200" alt="Team sheet with 3P% chart">
 </p>
@@ -35,12 +35,19 @@ is slow to update its season totals).
   odds trends and the 3P% page) shows only what was known the morning after it. The start screen
   also links straight to the spoiler-free 3P% page. See [Live or up to a date](#live-or-up-to-a-date).
 - **Net rating diamond.** Offensive vs. defensive rating rotated 45° so that *height is net rating*
-  (after Owen Phillips' "diamond plots" in The F5), with a small drawn key above it showing how to read it. Switch between raw and opponent-adjusted
+  (after Owen Phillips' "diamond plots" in The F5), with a small drawn key showing how to read it. Switch between raw and opponent-adjusted
   ratings and filter by conference; the view fits the teams on show and glides between states.
-  Pinch, double-tap or use +/− to zoom. Logos keep their size, so a crowded middle spreads out.
+  Pinch or double-tap to zoom (with a mouse, +/− buttons or ctrl+scroll). Logos keep their size, so a crowded middle spreads out.
+  A ring around each logo shows the **standings**: green for a top-6 playoff spot, dashed amber for
+  the play-in (7–10), none for the rest, which are hidden by default. Filter to East or West and every
+  logo also shows its seed.
+- **Best offenses and defenses.** Under the diamond, two ranked charts show how far each team's offense
+  and defense are from the league average, best at the top, with bars to the right meaning better on both
+  (for defense, fewer points allowed). They follow the Raw / Adjusted switch and the conference filter,
+  show the top 10, and expand to every team.
 - **Ladder.** The same ratings as a ranked list: a ring for the raw net rating, a dot for the adjusted
   one, so you can see whose schedule flattered them.
-- **Team sheet.** Offense, defense and net rating (adjusted and raw, with league ranks), strength of
+- **Team sheet.** Record and conference seed; offense, defense and net rating (adjusted and raw, with league ranks), strength of
   schedule, pace, and a compact 3P% chart for every player on the roster.
 - **Spoiler-free 3P% page** (`/threes`). Pick one or two teams, or tap one of today's matchups, and see
   each player's season 3-point shooting. The page loads its own minimal JSON, so it never receives
@@ -52,6 +59,9 @@ is slow to update its season totals).
   price history, and a "market vs. court" chart of title odds against adjusted net rating.
 - **Demo mode**, the third start-screen option: invented numbers and fictional players, for
   screenshots or for a first look before any real data exists.
+- **Legends out of the way.** Every chart's legend and reading notes sit behind a small
+  *How to read this* switch under the chart, closed by default, so the charts get the space.
+  The odds trend lines keep their legend visible, since it names the lines.
 - Dark and light themes, installable PWA, works offline with the last data it saw.
 
 ## Live or up to a date
@@ -84,7 +94,17 @@ Rules that keep snapshots spoiler-safe:
 Storage is small: about 37 KB per day compressed, roughly 6 MB for a whole regular season. Snapshots
 are kept until you delete them; removing a file simply removes that day from the list.
 
+### Backing up saved days
+
+Snapshots can't be rebuilt later (ESPN only serves season-to-date totals), so they are the one part of
+`data/` that is kept in git; everything else in `data/` stays git-ignored. New and replaced days show up
+in `git status` like any other change and are backed up with your next commit and push (stage them with
+`git add -A` or `git add data/snapshots`; `git commit -a` alone skips brand-new files). A fresh clone
+brings the saved days with it. In this repository the snapshots are public, like the code.
+
 ## Reading the diamond
+
+The same key is in the app: tap *How to read this* under the diamond.
 
 ```
               ↑ better net rating
@@ -108,6 +128,38 @@ are kept until you delete them; removing a file simply removes that day from the
   shaded top zone are better than average at both ends; teams at the bottom are worse at both.
 - Horizontal gridlines are net rating: +5, 0, −5 and so on.
 - In *Adjusted* mode, small rings show where each team sat before the schedule adjustment.
+
+### Standings on the diamond
+
+<p align="center">
+  <img src="docs/screenshots/seeds.png" width="200" alt="Diamond filtered to the East, with seed badges">
+</p>
+
+- The coloured ring around a logo is the team's place in its conference: **solid green** = seeds 1–6
+  (straight into the playoffs), **dashed amber** = seeds 7–10 (play-in), **no ring and a slightly faded
+  logo** = seeds 11–15.
+- **Top 10** (a chip next to East / West) is on by default: seeds 11–15 are left off
+  the diamond completely and the view fits the teams still in the hunt. Tap it to bring them back for
+  this visit; every page load starts with it on again.
+- Seeds are per conference, so the numbers appear only when you pick **East** or **West**. The label
+  you see on hover, selection or when zoomed reads e.g. `BOS +5.2 · 3rd E`.
+- Height is how well a team plays; the ring is where its record puts it. A team that sits high but
+  has an amber ring (or a seed below teams beneath it) is playing better than its record, often
+  because of close-game luck or a hard schedule, and the reverse holds for a green ring low down.
+- Until teams average 20 games, the key reminds you that early-season seeds move a lot.
+
+### Best offenses and defenses
+
+<p align="center">
+  <img src="docs/screenshots/offense.png" width="200" alt="Best offenses chart">
+  <img src="docs/screenshots/defense.png" width="200" alt="Best defenses chart">
+</p>
+
+- Each bar starts at the league average (the centre line). A bar to the right is better than average,
+  to the left worse, on both charts. On the defense chart that means *fewer* points allowed, so the
+  best defense has the lowest number but the longest bar to the right.
+- The number is points scored (or allowed) per 100 possessions, with the gap to the average under it.
+- Both charts use the same scale in both modes, so bars can be compared across them.
 
 ## How the ratings are computed
 
@@ -133,6 +185,12 @@ solved exactly, with Σo = Σd (adjusted net ratings average to zero)
 `ORtg/A = lg + o_i` and `DRtg/A = lg + d_i` are what the team would post against a league-average
 schedule. Early in the season the adjustment can move a team by several points; over a full season
 raw and adjusted net ratings end up very close.
+
+**Seeds** rank each conference by win percentage. Ties go to the better record in games among the
+tied teams, then conference record, then point differential. The NBA's official rules also use
+division standings, so a rare tie can come out differently from the official seed. Seeds come from
+the game results, so they work for *Up to a date* too (snapshots saved before seeds existed fall back
+to win percentage, then net rating).
 
 Strength of schedule is the average adjusted net rating of the opponents a team has faced.
 ESPN's season totals can lag the scoreboard by a game for a few hours after games end; the

@@ -25,10 +25,11 @@
     var dmax = 70;
     var x = function (v) { return +(clamp(v, 0, dmax) / dmax * 100).toFixed(2); };
     var maxA = Math.max.apply(null, rows.map(function (p) { return p.tpa; }));
-    var html = (opts.heading === false ? '' : '<div class="section-t">3-point shooting <small>sorted by attempts</small></div>') +
+    var html = (opts.heading === false ? '' : '<div class="section-t">3-point shooting</div>') +
       '<div class="tp-head"><span>Team <b>' + (team.tp != null ? team.tp.toFixed(1) + '%' : '–') + '</b> on ' +
       (team.tpa_g != null ? team.tpa_g.toFixed(1) : '–') + ' attempts a game</span>' +
       '<span>League ' + (lgp != null ? lgp.toFixed(1) + '%' : '–') + '</span></div>' +
+
       '<div class="tp-axis" aria-hidden="true"><span></span><span class="track">' + [0, 20, 40, 60].map(function (v) {
         return '<span class="tick" style="left:' + x(v) + '%">' + v + '%</span>';
       }).join('') + '</span><span></span></div>';
@@ -46,12 +47,16 @@
         '<span class="bub ' + (above ? 'pos' : 'neg') + '" style="left:' + x(v) + '%;width:' + dsz + 'px;height:' + dsz + 'px"></span></span>' +
         '<span class="tp-val"><small>' + p.tpm + '/' + p.tpa + '</small><b>' + v.toFixed(1) + '%</b></span></' + tag + '>';
     }).join('');
-    html += '<div class="tp-legend"><span><i style="width:9px;height:9px;background:var(--pos)"></i>above league average</span>' +
-      '<span><i style="width:9px;height:9px;background:var(--neg)"></i>below</span><span>bigger dot = more attempts</span>' +
-      '<span>faded = fewer than 10 attempts</span></div>';
     if (none.length) {
       html += '<p class="tp-none">No threes attempted: ' + none.map(function (p) { return esc(p.short || p.name); }).join(', ') + '.</p>';
     }
+    html +=
+      '<details class="help" data-help="tp"><summary><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/>' +
+      '<path d="M8 7.2v4M8 4.6v.1"/></svg>How to read this</summary><div class="help-body">' +
+      '<p class="foot">Season 3-point shooting, players sorted by attempts. The line is the league average.</p>' +
+      '<div class="tp-legend"><span><i style="width:9px;height:9px;background:var(--pos)"></i>above league average</span>' +
+      '<span><i style="width:9px;height:9px;background:var(--neg)"></i>below</span><span>bigger dot = more attempts</span>' +
+      '<span>faded = fewer than 10 attempts</span></div></div></details>';
     return html;
   };
 })();

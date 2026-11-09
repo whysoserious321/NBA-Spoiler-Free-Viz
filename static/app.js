@@ -10,6 +10,7 @@
     view: 'diamond', mode: 'raw', conf: 'all', stat: 0,
     range: { mvp: 'all', title: '1m' },
     sel: null, width: window.innerWidth,
+    hideOut: true /* Top 10: on at every page load */, odAll: { o: false, d: false }, help: {},
   };
 
   var main = document.getElementById('main');
@@ -17,7 +18,6 @@
   var sheet = document.getElementById('sheet');
   var sheetBody = document.getElementById('sheet-body');
   var backdrop = document.getElementById('sheet-backdrop');
-  var meta = document.getElementById('meta');
   var modePill = document.getElementById('mode-pill');
 
   /* ------------------------------------------------------------ helpers */
@@ -36,6 +36,18 @@
     });
   }
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  /* Legends and reading notes sit behind a "How to read this" switch, closed by
+     default. Its open state is kept per id while the page is open, so a redraw
+     (mode, filter, tab) doesn't snap it shut. */
+  function help(id, html) {
+    return '<details class="help" data-help="' + id + '"' + (S.help[id] ? ' open' : '') + '>' +
+      '<summary><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 4.6v.1"/></svg>' +
+      'How to read this</summary><div class="help-body">' + html + '</div></details>';
+  }
+  document.addEventListener('toggle', function (e) {
+    var d = e.target;
+    if (d && d.getAttribute && d.getAttribute('data-help')) S.help[d.getAttribute('data-help')] = d.open;
+  }, true);
   function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
   function isDark() {
     var t = document.documentElement.getAttribute('data-theme');
@@ -87,11 +99,16 @@
     return '<img class="' + (cls || 'logo') + '" src="' + logoSrc(abbr) + '" alt="' + esc(label || '') +
       '" width="24" height="24" loading="lazy" onerror="this.style.visibility=\'hidden\'">';
   }
+  /* Player circle: the headshot with a small team badge when there is one;
+     otherwise (no photo, or it fails to load) the team logo fills the circle.
+     Initials only when the team is unknown, since the name is always next to it. */
   function headHTML(name, src, team, size) {
     var st = size ? ' style="width:' + size + 'px;height:' + size + 'px"' : '';
-    return '<span class="hw"><span class="head"' + st + '><b class="ini">' + esc(initials(name)) + '</b>' +
-      (src ? '<img src="' + src + '" alt="" loading="lazy" onerror="this.remove()">' : '') + '</span>' +
-      (team ? logo(team, 'tm') : '') + '</span>';
+    var under = team ? logo(team, 'tmfull') : '<b class="ini">' + esc(initials(name)) + '</b>';
+    return '<span class="hw"><span class="head"' + st + '>' + under +
+      (src ? '<img class="photo" src="' + src + '" alt="" loading="lazy" ' +
+        'onerror="var b=this.parentNode.nextSibling;if(b)b.remove();this.remove()">' : '') + '</span>' +
+      (team && src ? logo(team, 'tm') : '') + '</span>';
   }
   function playerHead(id, size) {
     var p = S.players[id];
@@ -245,6 +262,7 @@
         S.data = d;
         S.teams = {};
         d.teams.forEach(function (t) { S.teams[t.abbr] = t; });
+        if (d.teams.some(function (t) { return t.seed === undefined; })) fillSeeds(d.teams);
         S.players = d.players || {};
         S.ranks = {};
         d.leaders.stats.forEach(function (s) {
@@ -268,10 +286,6 @@
     modePill.textContent = pill.text;
     modePill.className = 'mode-pill ' + pill.cls;
     modePill.hidden = false;
-    var through = d.through ? 'through ' + dateShort(new Date(d.through + 'T12:00:00')) : '';
-    if (S.choice.mode === 'demo') meta.textContent = d.season + ' · made-up numbers';
-    else if (S.choice.mode === 'date') meta.textContent = d.season + ' · games ' + through + ' only';
-    else meta.textContent = [d.season, through, 'updated ' + relTime(d.generated)].filter(Boolean).join(' · ');
   }
   modePill.addEventListener('click', changeData);
 
@@ -313,9 +327,11 @@
     main.innerHTML = '<div class="view"></div>';
     var v = main.firstChild;
     ({ ratings: renderRatings, leaders: renderLeaders, mvp: renderMVP, title: renderTitle })[S.tab](v);
+    // season and freshness live here, at the foot, so the top bar stays one slim row
+    var d = S.data, through = d.through ? ' through ' + dateShort(new Date(d.through + 'T12:00:00')) : '';
     var credit = S.choice.mode === 'demo' ? 'Demo data: every number and player here is made up.'
-      : S.choice.mode === 'date' ? 'Showing only games through ' + NBAGate.day(S.choice.date, true) + '. Data: ESPN · Polymarket.'
-        : 'Data: ESPN · Polymarket. Ratings computed by NBAViz.';
+      : S.choice.mode === 'date' ? esc(d.season) + ': only games through ' + NBAGate.day(S.choice.date, true) + '. Data: ESPN · Polymarket.'
+        : esc(d.season) + ' season' + through + ', updated ' + relTime(d.generated) + '.<br>Data: ESPN · Polymarket. Ratings computed by NBAViz.';
     v.insertAdjacentHTML('beforeend', '<p class="credit">' + credit + ' <button type="button" data-act="gate">Change</button></p>');
     $$('.tabbar a').forEach(function (a) {
       if (a.getAttribute('data-tab') === S.tab) a.setAttribute('aria-current', 'page');
@@ -326,6 +342,10 @@
   main.addEventListener('click', function (e) {
     var act = e.target.closest('[data-act]');
     if (act) { changeData(); return; }
+    var hideOut = e.target.closest('[data-hide-out]');
+    if (hideOut) return toggleHideOut(hideOut);
+    var more = e.target.closest('[data-od-more]');
+    if (more) { var k = more.getAttribute('data-od-more'); S.odAll[k] = !S.odAll[k]; drawOD(); return; }
     var segBtn = e.target.closest('.seg button');
     if (segBtn) return onControl(segBtn.parentNode.getAttribute('data-ctl'), segBtn.getAttribute('data-val'), segBtn);
     var chip = e.target.closest('.chip[data-conf]');
@@ -366,6 +386,35 @@
   function rv(t, k) { return S.mode === 'adj' ? t[k + '_a'] : t[k]; }
   function rr(t, k) { return S.mode === 'adj' ? t.rk[k + '_a'] : t.rk[k]; }
   function visible(t) { return S.conf === 'all' || t.conf === S.conf; }
+
+  /* Standings. The server sends each team's conference seed (win %, then
+     head-to-head, conference record, point differential). Snapshots saved
+     before seeds existed lack it: rank those by win %, then net rating. */
+  function fillSeeds(teams) {
+    var pct = function (t) { return t.w + t.l ? t.w / (t.w + t.l) : 0.5; };
+    var any = teams.some(function (t) { return t.w + t.l > 0; });
+    ['East', 'West'].forEach(function (c) {
+      teams.filter(function (t) { return t.conf === c; })
+        .sort(function (a, b) { return pct(b) - pct(a) || b.nrtg - a.nrtg || (a.abbr < b.abbr ? -1 : 1); })
+        .forEach(function (t, i) { t.seed = any ? i + 1 : null; });
+    });
+  }
+  // playoff picture: seeds 1-6 are in, 7-10 play-in, 11-15 out
+  function tier(t) { return !t.seed ? '' : t.seed <= 6 ? 'po' : t.seed <= 10 ? 'pi' : 'out'; }
+  // diamond only: the conference filter, plus the optional hiding of seeds 11-15
+  function diaShown(t) { return visible(t) && !(S.hideOut && tier(t) === 'out'); }
+  function toggleHideOut(btn) {
+    S.hideOut = !S.hideOut;
+    btn.setAttribute('aria-pressed', String(S.hideOut));
+    if (S.sel && S.teams[S.sel] && !diaShown(S.teams[S.sel])) setSelection(null);
+    updateDiamond();
+  }
+  function hasSeeds() { return S.data.teams.some(function (t) { return t.seed; }); }
+  function earlySeason() {
+    var n = 0;
+    S.data.teams.forEach(function (t) { n += t.w + t.l; });
+    return n / Math.max(1, S.data.teams.length) < 20;
+  }
   function sortedTeams() {
     return S.data.teams.slice().sort(function (a, b) { return rv(b, 'nrtg') - rv(a, 'nrtg'); });
   }
@@ -373,31 +422,40 @@
   function renderRatings(v) {
     v.innerHTML =
       '<section class="card">' +
-      '<div class="card-h"><p class="kicker">Team ratings</p><h2>Net rating</h2>' +
-      '<p>Points per 100 possessions, offense minus defense. <b>Adjusted</b> takes out the strength of the opponents each team has played.</p></div>' +
+      '<div class="card-h"><h2>Net rating</h2></div>' +
       '<div class="controls">' +
       segBtns('view', [['ladder', 'Ladder'], ['diamond', 'Diamond']], S.view) +
       segBtns('mode', [['raw', 'Raw'], ['adj', 'Adjusted']], S.mode) +
       '</div>' +
       '<div class="chips" role="group">' + [['all', 'All teams'], ['East', 'East'], ['West', 'West']].map(function (c) {
         return '<button type="button" class="chip" data-conf="' + c[0] + '" aria-pressed="' + (S.conf === c[0]) + '">' + c[1] + '</button>';
-      }).join('') + '</div>' +
-      '<div id="rt-body"></div><p class="foot" id="rt-foot"></p></section>';
+      }).join('') +
+      '<button type="button" class="chip top10" data-hide-out aria-pressed="' + S.hideOut + '"' +
+      ' title="Show only seeds 1–10 of each conference on the diamond">Top 10</button></div>' +
+      '<div id="rt-body"></div>' +
+      help('ratings', '<p class="foot">Net rating is points scored minus points allowed per 100 possessions. ' +
+        '<b>Adjusted</b> takes out the strength of the opponents each team has played.</p>' +
+        '<div id="rt-help"></div><p class="foot" id="rt-foot"></p>') + '</section>' +
+      '<div id="od-cards"></div>';
     drawRatingsBody();
   }
 
   function drawRatingsBody() {
-    var body = $('#rt-body'), foot = $('#rt-foot');
+    var body = $('#rt-body'), foot = $('#rt-foot'), key = $('#rt-help'), top10 = $('.chip.top10');
     if (!body) return;
+    if (top10) top10.hidden = S.view !== 'diamond' || !hasSeeds();
     if (S.view === 'ladder') {
+      key.innerHTML = ladderLegend();
       body.innerHTML = ladderHTML();
       updateLadder(false);
       foot.innerHTML = 'Sorted by the selected rating. Ring = raw, dot = adjusted; a <b>green</b> link means a tougher-than-average schedule, so adjusting raised the rating. ' +
         'O / D = offensive and defensive rating (points scored and allowed per 100 possessions; lower D is better). Tap a team for details.';
     } else {
+      key.innerHTML = diamondKey() + tierKey();
       drawDiamond(body);
       drawRatingsFootOnly(foot);
     }
+    drawOD();
   }
 
   function ladderExtent() {
@@ -406,6 +464,11 @@
     return Math.max(8, Math.ceil(m + 1));
   }
 
+  function ladderLegend() {
+    return '<div class="legend" aria-hidden="true"><span><i class="lg-dot"></i>Adjusted</span><span><i class="lg-ring"></i>Raw</span>' +
+      '<span><i class="lg-line" style="background:var(--up-mark)"></i>adj. higher</span>' +
+      '<span><i class="lg-line" style="background:var(--muted);opacity:.6"></i>adj. lower</span></div>';
+  }
   function ladderHTML() {
     var ext = ladderExtent();
     var x = function (v) { return ((v + ext) / (2 * ext) * 100).toFixed(2); };
@@ -429,10 +492,7 @@
         '<span class="lval wide-only v-o"><b></b><small></small></span>' +
         '<span class="lval wide-only v-d"><b></b><small></small></span></button>';
     }).join('');
-    return '<div class="legend" aria-hidden="true"><span><i class="lg-dot"></i>Adjusted</span><span><i class="lg-ring"></i>Raw</span>' +
-      '<span><i class="lg-line" style="background:var(--up-mark)"></i>adj. higher</span>' +
-      '<span><i class="lg-line" style="background:var(--muted);opacity:.6"></i>adj. lower</span></div>' +
-      '<div class="ladder">' + head + '<div class="ladder-rows">' + rows + '</div></div>';
+    return '<div class="ladder">' + head + '<div class="ladder-rows">' + rows + '</div></div>';
   }
 
   function updateLadder(animate) {
@@ -497,7 +557,7 @@
     return { u: (o - dd) / R2, v: (o + dd) / R2 };
   }
   function diaBox(mode) {
-    var ts = S.data.teams.filter(visible);
+    var ts = S.data.teams.filter(diaShown);
     var b = { u0: Infinity, u1: -Infinity, v0: Infinity, v1: -Infinity };
     (ts.length ? ts : S.data.teams).forEach(function (t) {
       var p = diaPos(t, mode);
@@ -529,7 +589,7 @@
     var b = diaBox(S.mode);
     var kW = (W - dia.gutter - L - 14) / b.du;
     var minH = narrow ? 340 : 380;
-    var maxH = narrow ? Math.max(minH, Math.min(W * 1.5, window.innerHeight * 0.74)) : Math.max(minH, Math.min(W * 1.05, 760));
+    var maxH = narrow ? Math.max(minH, Math.min(W * 1.6, window.innerHeight * 0.8)) : Math.max(minH, Math.min(W * 1.05, 760));
     var H = Math.round(clamp(b.dv * kW + L + 50, minH, maxH));
     dia.H = H; dia.bot = H - 8;
 
@@ -542,13 +602,15 @@
     });
     S.data.teams.slice().sort(function (p, q) { return p.nrtg_a - q.nrtg_a; }).forEach(function (t) {
       s += '<g class="pt" data-team="' + t.abbr + '" tabindex="0" role="button" aria-label="' + esc(t.name) + '">' +
-        '<circle class="halo" r="' + (L / 2 + 1) + '" opacity=".85"/><circle class="sel-ring" r="' + (L / 2 + 3) + '"/>' +
+        '<circle class="halo" r="' + (L / 2 + 1) + '" opacity=".85"/><circle class="tier" r="' + (L / 2 + 2) + '"/>' +
+        '<circle class="sel-ring" r="' + (L / 2 + 6) + '"/>' +
         '<image href="' + logoSrc(t.abbr) + '" x="' + (-L / 2) + '" y="' + (-L / 2) + '" width="' + L + '" height="' + L + '"/>' +
-        '<text class="pt-label" y="' + (-L / 2 - 6) + '" text-anchor="middle"></text></g>';
+        '<g class="seed-badge" transform="translate(' + (L / 2 - 1) + ',' + (-L / 2 + 1) + ')"><circle r="7.5"/>' +
+        '<text y="3.3" text-anchor="middle"></text></g>' +
+        '<text class="pt-label" y="' + (-L / 2 - 8) + '" text-anchor="middle"></text></g>';
     });
     s += '</g></svg>';
     body.innerHTML =
-      diamondKey() +
       '<div class="chart-wrap' + (narrow ? ' bleed' : '') + '">' + s +
       '<div class="zoom-ctl"><button type="button" data-z="in" aria-label="Zoom in">+</button>' +
       '<button type="button" data-z="out" aria-label="Zoom out">−</button>' +
@@ -612,14 +674,40 @@
     return s + '</svg>';
   }
 
-  // labels, dimming and the raw/adjusted class: everything that is not geometry
+  /* Standings key under the drawn key: ring styles, plus a line that changes
+     with the conference filter (seeds are per conference). */
+  function tierKey() {
+    var sw = function (cls) { return '<svg viewBox="0 0 16 16" aria-hidden="true"><circle class="' + cls + '" cx="8" cy="8" r="6"/></svg>'; };
+    return '<div class="tier-key" id="tier-key"' + (hasSeeds() ? '' : ' hidden') + '>' +
+      '<span>' + sw('po') + 'playoff spot (1–6)</span>' +
+      '<span>' + sw('pi') + 'play-in (7–10)</span>' +
+      '<span>' + sw('out') + 'no ring: out (11–15), hidden while <b>Top 10</b> is on</span>' +
+      '<p class="tier-note" id="tier-note"></p></div>';
+  }
+  function tierNote() {
+    return (S.conf === 'all' ? 'Seeds are per conference: pick East or West to see each number.'
+      : 'Numbers are seeds in the ' + S.conf + '.') +
+      (earlySeason() ? ' Early season: seeds still change a lot from night to night.' : '');
+  }
+
+  // labels, dimming, standings and the raw/adjusted class: everything that is not geometry
   function diaDecorate() {
     dia.svg.classList.toggle('mode-raw', S.mode === 'raw');
+    dia.svg.classList.toggle('seeds-on', S.conf !== 'all');
+    var note = $('#tier-note');
+    if (note) note.textContent = tierNote();
     $$('.pt', dia.svg).forEach(function (g) {
-      var t = S.teams[g.getAttribute('data-team')];
+      var t = S.teams[g.getAttribute('data-team')], tr = tier(t);
       g.style.opacity = visible(t) ? '' : '0.12';
       g.style.pointerEvents = visible(t) ? '' : 'none';
-      $('.pt-label', g).textContent = t.abbr + ' ' + sign(rv(t, 'nrtg'));
+      g.style.display = S.hideOut && tier(t) === 'out' ? 'none' : '';
+      g.classList.remove('t-po', 't-pi', 't-out');
+      if (tr) g.classList.add('t-' + tr);
+      $('.seed-badge', g).style.visibility = t.seed && diaShown(t) ? '' : 'hidden';
+      $('.seed-badge text', g).textContent = t.seed || '';
+      var standing = t.seed ? ordinal(t.seed) + (S.conf === 'all' ? ' ' + t.conf.charAt(0) : '') : '';
+      $('.pt-label', g).textContent = t.abbr + ' ' + sign(rv(t, 'nrtg')) + (standing ? ' · ' + standing : '');
+      g.setAttribute('aria-label', t.name + (t.seed ? ', ' + ordinal(t.seed) + ' in the ' + t.conf : ''));
     });
   }
 
@@ -665,7 +753,7 @@
       var p1 = P(r.u, r.v), p2 = P(q.u, q.v), ln = gh.firstChild, ci = gh.lastChild;
       ln.setAttribute('x1', p1[0]); ln.setAttribute('y1', p1[1]); ln.setAttribute('x2', p2[0]); ln.setAttribute('y2', p2[1]);
       ci.setAttribute('cx', p1[0]); ci.setAttribute('cy', p1[1]);
-      gh.style.display = visible(t) ? '' : 'none';
+      gh.style.display = diaShown(t) ? '' : 'none';
     });
     $$('.pt', svg).forEach(function (pt) {
       var q = posOf(S.teams[pt.getAttribute('data-team')]), p = q.x != null ? [q.x, q.y] : P(q.u, q.v);
@@ -787,13 +875,75 @@
     diaAnimate(fromMode || S.mode, S.mode);
     var foot = $('#rt-foot');
     if (foot && S.view === 'diamond') drawRatingsFootOnly(foot);
+    drawOD();
   }
   function drawRatingsFootOnly(foot) {
     foot.innerHTML = '<b>The higher a team sits, the better</b>: height is net rating, so teams at the same height are equally good, ' +
       'whether they get there with offense (further right) or defense (further left). ' +
       'The diagonals mark league-average offense and defense; teams in the shaded top zone beat the average on both ends. ' +
       (S.mode === 'adj' ? 'Small rings show where each team sits before the adjustment. ' : '') +
+      (hasSeeds() ? 'The coloured ring around a logo is its place in the standings: green = top 6 in its conference, ' +
+        'dashed amber = play-in. A team sitting higher than its seed suggests is playing better than its record. ' : '') +
       'The view fits the teams shown. <b>Pinch or double-tap to zoom</b>, drag to move, tap a logo for details.';
+  }
+
+  /* Offense and defense, under the diamond: each team's distance from the
+     league average, best at the top. Bars to the right are better on both
+     charts (for defense that means fewer points allowed). Both follow
+     Raw / Adjusted and the conference filter; the scale is shared and fixed,
+     so bars can be compared across the two charts and both modes. */
+  var OD_TOP = 10;
+  function odExtent() {
+    var m = 0;
+    ['raw', 'adj'].forEach(function (md) {
+      var ref = diaRef(md), a = md === 'adj' ? '_a' : '';
+      S.data.teams.forEach(function (t) { m = Math.max(m, Math.abs(t['ortg' + a] - ref[0]), Math.abs(t['drtg' + a] - ref[1])); });
+    });
+    return Math.max(4, Math.ceil(m + 0.5));
+  }
+  function drawOD() {
+    var box = $('#od-cards');
+    if (!box) return;
+    if (S.view !== 'diamond' || !S.data.teams.length) { box.innerHTML = ''; return; }
+    var ext = odExtent();
+    box.innerHTML = odCard('o', ext) + odCard('d', ext);
+  }
+  function odCard(key, ext) {
+    var off = key === 'o', ref = diaRef(S.mode)[off ? 0 : 1];
+    var better = function (t) { return off ? rv(t, 'ortg') - ref : ref - rv(t, 'drtg'); };
+    var ts = S.data.teams.filter(visible).sort(function (a, b) { return better(b) - better(a); });
+    var all = S.odAll[key] || ts.length <= OD_TOP;
+    var x = function (v) { return (50 + clamp(v, -ext, ext) / ext * 50).toFixed(2); };
+    var step = ext > 10 ? 5 : ext > 5 ? 2 : 1;
+    var grid = '';
+    for (var g = -Math.floor(ext / step) * step; g <= ext; g += step) {
+      grid += '<span class="' + (g === 0 ? 'zero' : 'gl') + '" style="left:' + x(g) + '%"></span>';
+    }
+    var head = '<div class="od-axis" aria-hidden="true"><span></span><span></span><span></span><div class="track">' +
+      '<span class="od-avg" style="left:50%">league avg ' + ref.toFixed(1) + '</span>' +
+      '<span class="od-w">← worse</span><span class="od-b">better →</span></div><span></span></div>';
+    var rows = ts.map(function (t, i) {
+      var b = better(t), v = rv(t, off ? 'ortg' : 'drtg'), d = v - ref;
+      var lo = Math.min(50, +x(b)), w = Math.abs(+x(b) - 50);
+      return '<button type="button" class="od-row' + (!all && i >= OD_TOP ? ' hide' : '') + '" data-team="' + t.abbr + '"' +
+        ' aria-label="' + esc(t.name) + ': ' + v.toFixed(1) + ', ' + ordinal(i + 1) + '">' +
+        '<span class="od-rank">' + (i + 1) + '</span>' + logo(t.abbr) + '<b class="od-abbr">' + t.abbr + '</b>' +
+        '<span class="track">' + grid + '<span class="od-bar ' + (b >= 0 ? 'good' : 'bad') + '" style="left:' + lo.toFixed(2) + '%;width:' + w.toFixed(2) + '%"></span></span>' +
+        '<span class="od-val"><b>' + v.toFixed(1) + '</b><small class="' + (b >= 0 ? 'good' : 'bad') + '">' + sign(d) + ' vs avg</small></span></button>';
+    }).join('');
+    var where = S.conf === 'all' ? '' : ' in the ' + S.conf;
+    var more = ts.length > OD_TOP ? '<button type="button" class="chip od-more" data-od-more="' + key + '">' +
+      (all ? 'Show top ' + OD_TOP : 'Show all ' + ts.length) + '</button>' : '';
+    return '<section class="card od-card">' +
+      '<div class="card-h"><h2>' + (off ? 'Best offenses' : 'Best defenses') + where + '</h2></div>' +
+      '<div class="od">' + head + rows + '</div>' + more +
+      help('od-' + key, '<p class="foot">' + (off ? 'Points <b>scored</b> per 100 possessions. More is better.'
+        : 'Points <b>allowed</b> per 100 possessions. Fewer is better.') + '</p><p class="foot">Each bar starts at the league average (the centre line). A bar to the right is ' +
+        'better than average, to the left worse' + (off ? '.' : ': on defense that means fewer points allowed, so the best ' +
+        'defense has the lowest number but the longest bar to the right.') +
+        ' The small number is the gap to the average. Both charts share one scale, so bars compare across them. ' +
+        (S.mode === 'adj' ? 'Adjusted ratings take out the strength of the opponents faced. ' : '') +
+        'Tap a team for details.</p>') + '</section>';
   }
 
   function setSelection(abbr) {
@@ -838,8 +988,7 @@
   function leaderCard(s) {
     var rows = s.rows.slice(0, 5), top = (rows.length ? rows[0][1] : 0) || 1;
     return '<section class="card" aria-label="' + esc(s.label) + ' leaders">' +
-      '<div class="card-h"><p class="kicker">Season leaders · per game</p><h2>' + esc(s.label) + '</h2>' +
-      '<p>' + s.rows.length + ' qualified players</p></div>' +
+      '<div class="card-h"><h2>' + esc(s.label) + '</h2></div>' +
       rows.map(function (r, i) {
         var p = S.players[r[0]] || {};
         return '<button type="button" class="lead-row' + (i === 0 ? ' first' : '') + '" data-player="' + esc(r[0]) + '">' +
@@ -870,9 +1019,11 @@
     var card = $('#swarm-card');
     if (!card) return;
     var s = S.data.leaders.stats[S.stat];
-    card.innerHTML = '<div class="card-h"><p class="kicker">' + esc(s.label) + ' · everyone who qualifies</p>' +
-      '<h2>How far ahead is the top?</h2><p>Each dot is a player. The top 10 are highlighted. Tap a dot for the player.</p></div>' +
-      '<div class="chart-wrap" id="swarm"></div><p class="foot">' + esc(S.data.leaders.rule) + '.</p>';
+    card.innerHTML = '<div class="card-h"><h2>' + esc(s.label) + ': how far ahead is the top?</h2></div>' +
+      '<div class="chart-wrap" id="swarm"></div>' +
+      help('swarm', '<p class="foot">Season averages per game for all ' + s.rows.length + ' qualified players: ' +
+        'each dot is a player, and the top 10 are highlighted. Tap a dot for the player. ' +
+        esc(S.data.leaders.rule) + '.</p>');
     var host = $('#swarm'), W = avail(host);
     var rows = s.rows;
     if (!rows.length) { host.innerHTML = '<p class="foot">No qualified players yet.</p>'; return; }
@@ -1008,9 +1159,9 @@
     var ev = S.data.odds.mvp;
     if (!ev || !ev.outcomes || !ev.outcomes.length) { v.innerHTML = '<div class="card">No MVP market found.</div>'; return; }
     v.innerHTML =
-      '<section class="card"><div class="card-h"><p class="kicker">Polymarket</p><h2>MVP odds</h2>' +
-      '<p>Chance of winning ' + esc(S.data.season) + ' MVP, as priced by the market.</p></div>' +
-      oddsBars(ev, 'mvp') + '<p class="foot">' + oddsFoot(ev) + '</p></section>' +
+      '<section class="card"><div class="card-h"><h2>MVP odds</h2></div>' +
+      oddsBars(ev, 'mvp') + help('odds-mvp', '<p class="foot">Chance of winning ' + esc(S.data.season) + ' MVP, as priced by the market. ' +
+        oddsFoot(ev) + '</p>') + '</section>' +
       trendCard('mvp', 'How the favourites moved');
     drawTrend('mvp');
   }
@@ -1019,22 +1170,26 @@
     var ev = S.data.odds.title;
     if (!ev || !ev.outcomes || !ev.outcomes.length) { v.innerHTML = '<div class="card">No championship market found.</div>'; return; }
     v.innerHTML =
-      '<section class="card"><div class="card-h"><p class="kicker">Polymarket</p><h2>Championship odds</h2>' +
-      '<p>Chance of winning the title, as priced by the market.</p></div>' +
-      oddsBars(ev, 'title') + '<p class="foot">' + oddsFoot(ev) + '</p></section>' +
+      '<section class="card"><div class="card-h"><h2>Championship odds</h2></div>' +
+      oddsBars(ev, 'title') + help('odds-title', '<p class="foot">Chance of winning the title, as priced by the market. ' +
+        oddsFoot(ev) + '</p>') + '</section>' +
       trendCard('title', 'How the favourites moved') +
-      '<section class="card"><div class="card-h"><p class="kicker">Market vs. court</p><h2>Odds against adjusted net rating</h2>' +
-      '<p>Teams above the line are priced higher than their play so far suggests; teams below are playing better than they’re priced.</p></div>' +
-      '<div class="chart-wrap" id="mvc"></div><p class="foot">Vertical axis uses a square-root scale so long shots stay readable. Line = least-squares fit. Tap a logo for details.</p></section>';
+      '<section class="card"><div class="card-h"><h2>Market vs. court</h2></div>' +
+      '<div class="chart-wrap" id="mvc"></div>' +
+      help('mvc', '<p class="foot">Title odds against adjusted net rating: how the market prices each team next to how well ' +
+        'it has actually played. Teams above the line are priced higher than their play so far suggests; teams below are ' +
+        'playing better than they’re priced. The vertical axis uses a square-root scale so long shots stay readable. ' +
+        'Line = least-squares fit. Tap a logo for details.</p>') + '</section>';
     drawTrend('title');
     drawMarketVsCourt();
   }
 
   function trendCard(key, title) {
-    return '<section class="card"><div class="card-h"><p class="kicker">Odds over time</p><h2>' + title + '</h2>' +
-      '<p>Market price for the current top ' + Math.min(5, S.data.odds[key].outcomes.filter(function (o) { return o.history && o.history.length; }).length) + '.</p></div>' +
+    var n = Math.min(5, S.data.odds[key].outcomes.filter(function (o) { return o.history && o.history.length; }).length);
+    return '<section class="card"><div class="card-h"><h2>' + title + '</h2></div>' +
       '<div class="controls">' + segBtns('range-' + key, [['1m', '30 days'], ['all', 'All']], S.range[key]) + '</div>' +
-      '<div id="trend-' + key + '"></div><p class="foot">Raw market price, 12-hour steps. Drag across the chart to read values.</p></section>';
+      '<div id="trend-' + key + '"></div>' +
+      help('trend-' + key, '<p class="foot">Market price over time for the current top ' + n + '. Raw market price, 12-hour steps. Drag across the chart to read values.</p>') + '</section>';
   }
 
   function drawTrend(key) {
@@ -1180,7 +1335,7 @@
     }
     var html =
       '<div class="sh-top">' + logo(abbr, 'logo', t.name) + '<div><h3 id="sheet-title">' + esc(t.name) + '</h3>' +
-      '<p>' + t.w + '–' + t.l + ' · ' + t.conf + (odds ? ' · title odds ' + pct(odds.prob) : '') + '</p></div></div>' +
+      '<p>' + t.w + '–' + t.l + ' · ' + (t.seed ? ordinal(t.seed) + ' in the ' : '') + t.conf + (odds ? ' · title odds ' + pct(odds.prob) : '') + '</p></div></div>' +
       '<div class="hero"><div class="hero-num">' + sign(t.nrtg_a) + '</div><div class="hero-cap"><b>Adjusted net rating</b><br>' +
       ordinal(t.rk.nrtg_a) + ' of ' + S.data.teams.length + ' · raw ' + sign(t.nrtg) + ' (' + ordinal(t.rk.nrtg) + ')</div></div>' +
       '<table class="rtable"><thead><tr><th></th><th>Adjusted</th><th>Raw</th></tr></thead><tbody>' +
@@ -1189,8 +1344,9 @@
       '<div class="tile"><span>Schedule</span><b>' + sign(t.sos) + '</b><small>' + ordinal(t.rk.sos) + ' toughest</small></div>' +
       '<div class="tile"><span>Pace</span><b>' + t.pace.toFixed(1) + '</b><small>poss. per game</small></div>' +
       '<div class="tile"><span>Points</span><b>' + t.ppg.toFixed(1) + '</b><small>allow ' + t.oppg.toFixed(1) + '</small></div></div>' +
-      '<p class="foot">Schedule = average adjusted net rating of the opponents faced so far. Ratings per 100 possessions.' +
-      (t.gp < t.w + t.l ? ' Ratings cover ' + t.gp + ' of ' + (t.w + t.l) + ' games; ESPN’s season totals catch up a few hours after games end.' : '') + '</p>' +
+      (t.gp < t.w + t.l ? '<p class="foot">Ratings cover ' + t.gp + ' of ' + (t.w + t.l) + ' games; ESPN’s season totals catch up a few hours after games end.</p>' : '') +
+      help('team', '<p class="foot">Schedule = average adjusted net rating of the opponents faced so far. Ratings per 100 possessions; ' +
+        'lower defense is better. Adjusted takes out the strength of the opponents faced.</p>') +
       threeChart(t);
     openSheet(html);
   }

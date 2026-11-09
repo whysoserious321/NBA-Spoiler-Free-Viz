@@ -5,7 +5,6 @@
   'use strict';
 
   var main = document.getElementById('main');
-  var meta = document.getElementById('meta');
   var pill = document.getElementById('mode-pill');
   var D = null, sel = [], choice = null;
 
@@ -79,11 +78,7 @@
     pill.textContent = p.text;
     pill.className = 'mode-pill ' + p.cls;
     pill.hidden = false;
-    meta.textContent = (D.season || '') + ' · ' + (choice.mode === 'demo' ? 'made-up numbers'
-      : choice.mode === 'date' ? 'games through ' + NBAGate.day(choice.date) + ' only'
-        : 'season to date, updated ' + relTime(D.generated));
-    var html = '<section class="card"><div class="card-h"><p class="kicker">Spoiler-free</p><h2>Pick one or two teams</h2>' +
-      '<p>Only 3-point shooting lives on this page: no scores, records, ratings or odds.</p></div>';
+    var html = '<section class="card"><div class="card-h"><h2>Pick one or two teams</h2></div>';
     if (D.games && D.games.length) {
       var label = !D.games_date ? 'Games'
         : (choice.mode === 'date' ? 'Next games, ' : 'Games today, ') + NBAGate.day(D.games_date, true) + ' (US date)';
@@ -97,7 +92,11 @@
     html += '<div class="tpick-grid">' + D.teams.map(function (t) {
       return '<button type="button" class="tpick" data-abbr="' + t.abbr + '" aria-pressed="' + (sel.indexOf(t.abbr) >= 0) +
         '" aria-label="' + esc(t.name) + '">' + logo(t.abbr) + '<span>' + t.abbr + '</span></button>';
-    }).join('') + '</div></section>';
+    }).join('') + '</div>' +
+      '<details class="help"><summary><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/>' +
+      '<path d="M8 7.2v4M8 4.6v.1"/></svg>How to read this</summary><div class="help-body"><p class="foot">' +
+      'Spoiler-free: only 3-point shooting lives on this page, with no scores, records, ratings or odds. ' +
+      'Tap a game or up to two logos to compare their players.</p></div></details></section>';
 
     if (!sel.length) {
       html += '<section class="card empty"><p>Tap a logo, or a game above, to see every player’s 3P%.</p></section>';
@@ -105,12 +104,12 @@
     sel.forEach(function (abbr) {
       var t = team(abbr);
       html += '<section class="card tp-card" id="tp-' + abbr + '"><div class="sh-top" style="margin:0 0 10px">' + logo(abbr) +
-        '<div><h3>' + esc(t.name) + '</h3><p>Season 3-point shooting, sorted by attempts</p></div></div>' +
+        '<div><h3>' + esc(t.name) + '</h3></div></div>' +
         window.tpChart(t, t.players, D.league_tp, { heading: false }) + '</section>';
     });
     html += '<p class="credit">' + (choice.mode === 'demo' ? 'Demo data: every number and player here is made up.'
       : choice.mode === 'date' ? 'Season totals through the games of ' + NBAGate.day(choice.date, true) + ' only. Data: ESPN.'
-        : 'Season totals through the last update (daily, 08:00). Data: ESPN.') +
+        : esc(D.season || '') + ' season totals, updated ' + relTime(D.generated) + ' (daily, 08:00). Data: ESPN.') +
       ' <button type="button" data-act="gate">Change</button><br>' +
       '<a href="/' + NBAGate.linkQuery(choice) + '" class="inline-link">Full dashboard ↗</a> (results, ratings and odds' +
       (choice.mode === 'date' ? ', also only up to that date)' : ')') + '</p>';

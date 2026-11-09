@@ -1,4 +1,8 @@
-data/
+# Everything the refresh writes stays local, except the saved game days:
+# they are committed with the code, so GitHub keeps a backup of them.
+data/*
+!data/snapshots/
+data/snapshots/.tmp_*
 __pycache__/
 *.pyc
 *.log

@@ -84,6 +84,40 @@ def adjust(raw_o, raw_d, opps, lg):
             {t: lg + sol[n + idx[t]] for t in teams})
 
 
+def conference_seeds(record, conf, h2h=None, conf_record=None, diff=None):
+    """Seed 1-15 within each conference, or {} before anyone has played.
+
+    record: abbr -> (wins, losses); conf: abbr -> 'East' / 'West'.
+    Ties on win % are broken by the record in games among the tied teams
+    (h2h: (winner, loser) -> wins), then conference record, then point
+    differential. The NBA's full rules also use division standings, so a
+    rare tie can come out differently from the official seed."""
+    def pct(w, l):
+        return w / (w + l) if w + l else 0.5
+
+    if not any(w + l for w, l in record.values()):
+        return {}
+    h2h, conf_record, diff = h2h or {}, conf_record or {}, diff or {}
+    seeds = {}
+    for c in ('East', 'West'):
+        teams = [t for t in record if conf.get(t) == c]
+        groups = defaultdict(list)
+        for t in teams:
+            groups[round(pct(*record[t]), 9)].append(t)
+        order = []
+        for p in sorted(groups, reverse=True):
+            tied = groups[p]
+
+            def among(t):
+                w = sum(h2h.get((t, o), 0) for o in tied if o != t)
+                l = sum(h2h.get((o, t), 0) for o in tied if o != t)
+                return pct(w, l)
+            order += sorted(tied, key=lambda t: (-among(t), -pct(*conf_record.get(t, (0, 0))),
+                                                 -diff.get(t, 0), t))
+        seeds.update({t: i + 1 for i, t in enumerate(order)})
+    return seeds
+
+
 def _team_for(name, teams):
     """Map a Polymarket outcome like 'San Antonio Spurs' to a team abbreviation."""
     low = (name or '').lower()
@@ -103,6 +137,8 @@ def build(games, teams_meta, season, label, norm_name):
 
     # ---- results: record + who played whom
     opps, wins, losses = defaultdict(list), defaultdict(int), defaultdict(int)
+    h2h, conf_w, conf_l, diff = defaultdict(int), defaultdict(int), defaultdict(int), defaultdict(int)
+    conf_of = lambda abbr: 'East' if abbr in EAST else 'West'
     through = None
     for g in games:
         h, a = g['home'], g['away']
@@ -111,7 +147,17 @@ def build(games, teams_meta, season, label, norm_name):
         win, lose = (h, a) if h['score'] > a['score'] else (a, h)
         wins[win['abbr']] += 1
         losses[lose['abbr']] += 1
+        h2h[(win['abbr'], lose['abbr'])] += 1
+        if conf_of(win['abbr']) == conf_of(lose['abbr']):
+            conf_w[win['abbr']] += 1
+            conf_l[lose['abbr']] += 1
+        margin = win['score'] - lose['score']
+        diff[win['abbr']] += margin
+        diff[lose['abbr']] -= margin
         through = max(through or g['date'], g['date'])
+    played = set(wins) | set(losses) | set(totals)
+    seeds = conference_seeds({t: (wins[t], losses[t]) for t in played}, {t: conf_of(t) for t in played},
+                             h2h=h2h, conf_record={t: (conf_w[t], conf_l[t]) for t in played}, diff=diff)
 
     # ---- raw ratings from season totals
     poss, ortg, drtg = {}, {}, {}
@@ -207,9 +253,9 @@ def build(games, teams_meta, season, label, norm_name):
         t_odds = title_by_team.get(abbr)
         team_rows.append({
             'abbr': abbr, 'name': meta.get('name', abbr), 'nick': meta.get('nick', abbr),
-            'conf': 'East' if abbr in EAST else 'West',
+            'conf': conf_of(abbr),
             'color': meta.get('color', '#777777'), 'alt': meta.get('alt', '#cccccc'),
-            'w': wins[abbr], 'l': losses[abbr], 'gp': s['gp'],
+            'w': wins[abbr], 'l': losses[abbr], 'gp': s['gp'], 'seed': seeds.get(abbr),
             'ortg': round(ortg[abbr], 2), 'drtg': round(drtg[abbr], 2), 'nrtg': round(nrtg[abbr], 2),
             'ortg_a': round(ortg_a[abbr], 2), 'drtg_a': round(drtg_a[abbr], 2),
             'nrtg_a': round(nrtg_a[abbr], 2),
