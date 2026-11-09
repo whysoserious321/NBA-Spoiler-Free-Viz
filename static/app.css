@@ -497,7 +497,6 @@ svg.diamond { -webkit-user-select: none; user-select: none; }
 .tp-card .sh-top .logo { width: 44px; height: 44px; }
 .tp-card .sh-top h3 { font-size: 18px; }
 .card.empty p { margin: 0; color: var(--ink-2); font-size: 14px; text-align: center; }
-body.threes main { padding-bottom: 32px; }
 @media (min-width: 640px) { .tpick-grid { grid-template-columns: repeat(10, minmax(0, 1fr)); } }
 
 /* ---------------------------------------------------------------- tooltip */

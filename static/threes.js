@@ -36,6 +36,11 @@
   // Live, up to a saved date, or demo: chosen on the start screen (shared with the dashboard).
   function start(c) {
     choice = c;
+    // Bottom bar: dashboard tabs open with the same data choice, like the "Full dashboard" link.
+    Array.prototype.forEach.call(document.querySelectorAll('.tabbar a'), function (a) {
+      var tab = a.getAttribute('data-tab');
+      a.setAttribute('href', (tab ? '/' : '/threes') + NBAGate.linkQuery(c) + (tab ? '#' + tab : ''));
+    });
     main.innerHTML = '<div class="skeleton" aria-hidden="true"><div></div><div></div></div>';
     load();
   }
