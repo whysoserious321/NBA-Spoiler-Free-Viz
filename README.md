@@ -1,5 +1,7 @@
 # NBAViz
 
+*Repository: [NBA-Spoiler-Free-Viz](https://github.com/whysoserious321/NBA-Spoiler-Free-Viz)*
+
 A small, mobile-first NBA dashboard that runs on a Raspberry Pi. It shows how good
 every team really is (net rating, raw and **opponent-adjusted**), who leads the league,
 what the betting market thinks about the title and MVP races, and every player's
@@ -42,8 +44,8 @@ is slow to update its season totals).
   schedule, pace, and a compact 3P% chart for every player on the roster.
 - **Spoiler-free 3P% page** (`/threes`). Pick one or two teams, or tap one of today's matchups, and see
   each player's season 3-point shooting. The page loads its own minimal JSON, so it never receives
-  scores, records, ratings, standings or odds. It asks the same live / up-to-a-date question and can
-  be installed on its own home-screen icon.
+  scores, records, ratings, standings or odds. It asks the same live / up-to-a-date question, has the
+  same bottom tab bar as the dashboard, and can be installed on its own home-screen icon.
 - **Season leaders.** Points, rebounds, assists, 3-pointers made, steals, blocks and true shooting:
   a top-5 card per stat plus a beeswarm of every qualified player, so you can see how far ahead the leader is.
 - **MVP and championship odds** from Polymarket: shares normalised to 100%, 24-hour change,
@@ -66,7 +68,9 @@ snapshot:
 
 The start screen lists only days that were saved. If you watched through a day that is not listed,
 pick the closest earlier one. The header pill (*Live*, *To Nov 7* or *Demo data*) shows the current
-choice; tap it to change. Links between the dashboard and the 3P% page keep the choice.
+choice; tap it to change. Links between the dashboard and the 3P% page keep the choice, including
+the bottom tab bar on the 3P% page: with *Live* chosen there, tapping *Ratings*, *Leaders*, *MVP* or
+*Title* opens the live dashboard without asking again.
 
 Rules that keep snapshots spoiler-safe:
 
@@ -140,8 +144,8 @@ when ratings cover fewer games than the record.
 Requires Python 3.9+.
 
 ```bash
-git clone https://github.com/whysoserious321/NBAViz.git
-cd NBAViz
+git clone https://github.com/whysoserious321/NBA-Spoiler-Free-Viz.git
+cd NBA-Spoiler-Free-Viz
 pip install -r requirements.txt
 python3 app.py
 ```
@@ -178,6 +182,8 @@ A background thread in the app refreshes once a day at `NBAVIZ_REFRESH_AT`:
 - a failed refresh is retried every 30 minutes until it works;
 - if ESPN's season totals don't include last night's games yet, it checks again every hour (until 14:00);
 - after a restart it refreshes straight away if the data is older than the latest scheduled time.
+  A restart does not resume the hourly catch-up, though: if the app is restarted on a morning when the
+  totals still lagged, it waits for the next day's run, so run `python3 scrape.py` by hand.
 
 A file lock makes sure only one process runs the schedule. `GET /api/status` shows the next run and the last result.
 
