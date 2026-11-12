@@ -11,6 +11,8 @@ data/dashboard.json for the web app:
         changes, so it is cached in data/cache/days/ and fetched once.
       - season per-game stats for every player (2 requests: all players for
         the team 3P% chart, qualified players for the leaderboards)
+      - the same player stats for each earlier season, once per season and
+        cached forever (data/cache/career/), for the career 3P% on /threes
   * Polymarket (Gamma + CLOB, read-only): championship and MVP markets plus
     their price history.
 
@@ -55,6 +57,9 @@ IMG_DIR = os.path.join(DATA_DIR, 'img')
 SNAP_DIR = os.path.join(DATA_DIR, 'snapshots')
 DASHBOARD = os.path.join(DATA_DIR, 'dashboard.json')
 ODDS_ARCHIVE = os.path.join(CACHE_DIR, 'odds_history.json')
+CAREER_DIR = os.path.join(CACHE_DIR, 'career')            # one file of 3PM/3PA per past season
+CAREER_BASE = os.path.join(CACHE_DIR, 'career_base.json')  # their sum, for career 3P%
+CAREER_FLOOR = 1990
 
 ESPN = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba'
 ESPN_STATS = 'https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/statistics'
@@ -443,6 +448,40 @@ def archive_odds_history(dash):
     write_json(ODDS_ARCHIVE, arch)
 
 
+# ----------------------------------------------------------------- career 3P%
+
+def update_career(f, end_year, current_ids, log=print):
+    """3PM/3PA of every earlier regular season, summed per player, for the
+    career 3P% on the 3-point page (career = this sum + the current season).
+
+    Past seasons never change, so each one is fetched once (one request, the
+    same endpoint as the current season's player stats) and kept in
+    data/cache/career/<end year>.json. Goes back until a season in which no
+    current player played. CAREER_BASE is only rewritten when every season
+    it needs is there, so a failed fetch never leaves a half-summed career."""
+    current_ids = set(current_ids)
+    base, seasons = {}, []
+    for yr in range(end_year - 1, CAREER_FLOOR - 1, -1):
+        path = os.path.join(CAREER_DIR, f'{yr}.json')
+        season = read_json(path)
+        if season is None:
+            rows = fetch_players(f, yr, qualified=False)
+            season = {p['id']: [p['tpm'], p['tpa']] for p in rows if p['id'] and p['gp'] > 0}
+            if not season:                       # a blip: keep the previous base, try again next refresh
+                raise RuntimeError(f'ESPN returned no player stats for {yr - 1}-{str(yr)[2:]}')
+            write_json(path, season)
+            log(f'career: saved {yr - 1}-{str(yr)[2:]} ({len(season)} players)')
+        seasons.append(yr)
+        for pid, (tpm, tpa) in season.items():
+            b = base.setdefault(pid, [0, 0])
+            b[0] += tpm
+            b[1] += tpa
+        if not current_ids & set(season):
+            break                                # nobody playing now was in the league then
+    write_json(CAREER_BASE, {'season': end_year, 'seasons': seasons, 'players': base})
+    return base
+
+
 # ---------------------------------------------------------------------- refresh
 
 def refresh(offline=False, log=print):
@@ -517,6 +556,12 @@ def refresh(offline=False, log=print):
         log(f"saved snapshot for games through {dash['through']}")
     else:
         log(f'no snapshot saved: {why}')
+    if not offline:
+        # last, so it can never hold up or break the dashboard itself
+        try:
+            update_career(f, end_year, [p['id'] for p in season.get('players') or []], log=log)
+        except Exception as e:
+            log(f'career 3P% update failed (keeping the previous one): {type(e).__name__}: {e}')
     log(f'wrote dashboard.json: {len(games)} games, {f.count} requests, {time.time() - t0:.1f}s')
     return dash
 

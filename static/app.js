@@ -282,7 +282,7 @@
   }
 
   function renderHeader() {
-    var d = S.data, pill = NBAGate.pill(S.choice);
+    var d = S.data, pill = NBAGate.pill(S.choice, d.generated);
     modePill.textContent = pill.text;
     modePill.className = 'mode-pill ' + pill.cls;
     modePill.hidden = false;
@@ -330,8 +330,10 @@
     // season and freshness live here, at the foot, so the top bar stays one slim row
     var d = S.data, through = d.through ? ' through ' + dateShort(new Date(d.through + 'T12:00:00')) : '';
     var credit = S.choice.mode === 'demo' ? 'Demo data: every number and player here is made up.'
-      : S.choice.mode === 'date' ? esc(d.season) + ': only games through ' + NBAGate.day(S.choice.date, true) + '. Data: ESPN · Polymarket.'
-        : esc(d.season) + ' season' + through + ', updated ' + relTime(d.generated) + '.<br>Data: ESPN · Polymarket. Ratings computed by NBAViz.';
+      : S.choice.mode === 'date' ? esc(d.season) + ': as of the refresh on ' + (NBAGate.stamp(d.generated) ? NBAGate.stamp(d.generated) + ' (' + NBAGate.zone() + '), ' : '') +
+          'games through ' + NBAGate.day(S.choice.date, true) + ' (US date). Data: ESPN · Polymarket.'
+        : esc(d.season) + ' season' + through + ', updated ' + (NBAGate.stamp(d.generated) ? NBAGate.stamp(d.generated) + ' (' + relTime(d.generated) + ')' : relTime(d.generated)) +
+          '.<br>Data: ESPN · Polymarket. Ratings computed by NBAViz.';
     v.insertAdjacentHTML('beforeend', '<p class="credit">' + credit + ' <button type="button" data-act="gate">Change</button></p>');
     $$('.tabbar a').forEach(function (a) {
       if (a.getAttribute('data-tab') === S.tab) a.setAttribute('aria-current', 'page');
@@ -370,10 +372,10 @@
     } else if (ctl === 'mode') {
       var prevMode = S.mode;
       S.mode = val;
-      if (S.view === 'ladder') updateLadder(true); else updateDiamond(prevMode);
+      if (S.view === 'ladder') { updateLadder(true); drawStandings(); } else updateDiamond(prevMode);
     } else if (ctl === 'conf') {
       S.conf = val;
-      if (S.view === 'ladder') updateLadder(false); else updateDiamond();
+      if (S.view === 'ladder') { updateLadder(false); drawStandings(); } else updateDiamond();
     } else if (ctl === 'range-mvp' || ctl === 'range-title') {
       var key = ctl.split('-')[1];
       S.range[key] = val;
@@ -436,7 +438,7 @@
       help('ratings', '<p class="foot">Net rating is points scored minus points allowed per 100 possessions. ' +
         '<b>Adjusted</b> takes out the strength of the opponents each team has played.</p>' +
         '<div id="rt-help"></div><p class="foot" id="rt-foot"></p>') + '</section>' +
-      '<div id="od-cards"></div>';
+      '<div id="od-cards"></div><div id="st-cards"></div>';
     drawRatingsBody();
   }
 
@@ -445,7 +447,7 @@
     if (!body) return;
     if (top10) top10.hidden = S.view !== 'diamond' || !hasSeeds();
     if (S.view === 'ladder') {
-      key.innerHTML = ladderLegend();
+      key.innerHTML = ladderLegend() + cpHelp();
       body.innerHTML = ladderHTML();
       updateLadder(false);
       foot.innerHTML = 'Sorted by the selected rating. Ring = raw, dot = adjusted; a <b>green</b> link means a tougher-than-average schedule, so adjusting raised the rating. ' +
@@ -456,6 +458,95 @@
       drawRatingsFootOnly(foot);
     }
     drawOD();
+    drawStandings();
+  }
+
+  /* Historical champion profile: five marks that nearly every recent champion had
+     (sources in cpHelp and the README). Ranks are league-wide and follow Raw /
+     Adjusted. profile(): 2 = all five (filled trophy, gold row), 1 = four of five
+     (outline trophy, dashed row outline), 0 = fewer. Used by the ladder and the standings. */
+  var TROPHY_CUP = 'M7 4h10v4a5 5 0 0 1-10 0z', TROPHY_REST = 'M7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3M12 13v4M8 20h8M10 17h4';
+  function winPace(t) { var gp = t.w + t.l; return gp ? Math.round(82 * t.w / gp) : null; }
+  var MARKS = [   // [label, met?, how the team stands]
+    ['top-3 seed', function (t) { return t.seed && t.seed <= 3; }, function (t) { return t.seed ? ordinal(t.seed) : 'no seed yet'; }],
+    ['top-5 net rating', function (t) { return rr(t, 'nrtg') <= 5; }, function (t) { return ordinal(rr(t, 'nrtg')); }],
+    ['top-10 defense', function (t) { return rr(t, 'drtg') <= 10; }, function (t) { return ordinal(rr(t, 'drtg')); }],
+    ['top-10 offense', function (t) { return rr(t, 'ortg') <= 10; }, function (t) { return ordinal(rr(t, 'ortg')); }],
+    // exact, not the rounded column: 52 wins = .634, the lowest winning percentage of any champion since 2005
+    ['52+ win pace', function (t) { var gp = t.w + t.l; return gp > 0 && t.w / gp >= 52 / 82; },
+      function (t) { var gp = t.w + t.l; return gp ? (82 * t.w / gp).toFixed(1) : 'no games yet'; }],
+  ];
+  function marks(t) { return MARKS.filter(function (m) { return m[1](t); }).length; }
+  function profile(t) { var n = marks(t); return n === MARKS.length ? 2 : n === MARKS.length - 1 ? 1 : 0; }
+  function cpIcon(n) {
+    return n ? '<svg class="cp-ic' + (n === 2 ? ' full' : '') + '" viewBox="0 0 24 24" aria-hidden="true">' +
+      '<path class="cup" d="' + TROPHY_CUP + '"/><path d="' + TROPHY_REST + '"/></svg>' : '';
+  }
+  /* "4 of 5 champion marks; misses top-10 defense (14th)". sheet: the team sheet's
+     shorter wording, which lists what a team has once it has fewer than three. */
+  function cpText(t, sheet) {
+    var met = MARKS.filter(function (m) { return m[1](t); }), miss = MARKS.filter(function (m) { return !m[1](t); });
+    var head = met.length + ' of ' + MARKS.length + (sheet ? ' marks' : ' champion marks');
+    if (sheet && met.length < 3) return head + (met.length ? '; has ' + met.map(function (m) { return m[0]; }).join(', ') : '');
+    return head + (miss.length ? '; misses ' + miss.map(function (m) { return m[0] + ' (' + m[2](t) + ')'; }).join(', ') : '');
+  }
+  function cpHelp() {
+    return '<p class="foot">' + cpIcon(2) + ' <b>Champion profile</b>: the marks nearly every recent champion had. ' +
+      cpIcon(2) + ' and a gold row = all five, ' + cpIcon(1) + ' and a dashed outline = four of five. Tap a team to see which marks it misses.</p>' +
+      '<ul class="cp-list foot">' +
+      '<li><b>Top-3 seed</b> in its conference: 42 of 43 champions since 1984 (only the 6th-seeded 1995 Rockets were lower).</li>' +
+      '<li><b>Top-5 net rating</b>: 16 of the 20 champions from 2000 to 2019, none worse than 10th.</li>' +
+      '<li><b>Top-10 defense</b>: 23 of the 26 champions from 2001 to 2026.</li>' +
+      '<li><b>Top-10 offense</b>: 22 of those 26; 19 were top 10 at both ends.</li>' +
+      '<li><b>52+ win pace</b> (.634): every champion since 2005.</li></ul>' +
+      '<p class="foot">Net, offense and defense ranks are league-wide and follow Raw / Adjusted. A historical pattern, not a prediction.' +
+      (earlySeason() ? ' Early season: seeds, ranks and win pace still move a lot.' : '') + '</p>';
+  }
+
+  /* Standings under the ladder: one card per conference (following the filter),
+     ordered by seed, with games behind the leader and the 82-game win pace. */
+  function drawStandings() {
+    var box = $('#st-cards');
+    if (!box) return;
+    if (S.view !== 'ladder' || !S.data.teams.length) { box.innerHTML = ''; return; }
+    var confs = S.conf === 'all' ? ['East', 'West'] : [S.conf];
+    box.innerHTML = confs.map(function (c, i) { return standingsCard(c, i === confs.length - 1); }).join('');
+  }
+  function standingsCard(conf, last) {
+    var ts = S.data.teams.filter(function (t) { return t.conf === conf; })
+      .sort(function (a, b) { return (a.seed || 99) - (b.seed || 99) || (a.abbr < b.abbr ? -1 : 1); });
+    var lead = ts[0];
+    var rec = function (r) { return r ? r[0] + '–' + r[1] : '–'; };
+    var wide = function (v) { return '<span class="wide-only">' + v + '</span>'; };
+    var html = '<div class="st-row st-head" aria-hidden="true"><span>#</span><span></span><span>Team</span>' +
+      '<span>W</span><span>L</span><span>GB</span><span>Win<br>pace</span>' +
+      wide('Home') + wide('Away') + wide('Conf') + wide('L10') + wide('Strk') + '</div>';
+    ts.forEach(function (t) {
+      var gp = t.w + t.l, gb = (lead.w - t.w + t.l - lead.l) / 2, cp = profile(t);
+      var gbTxt = t === lead || !gp ? '–' : gb < 0 ? '−' + (-gb).toFixed(1) : gb.toFixed(1);
+      var pace = winPace(t);
+      html += '<button type="button" class="st-row' + (cp ? ' cp' + cp : '') + '" data-team="' + t.abbr + '" aria-label="' +
+        esc(t.name + ', ' + (t.seed ? ordinal(t.seed) + ' in the ' + conf + ', ' : '') + t.w + ' wins, ' + t.l + ' losses, ' +
+          (gbTxt === '–' ? '' : gbTxt + ' games behind, ') + (pace != null ? 'on pace for ' + pace + ' wins' : '') +
+          (cp ? ', ' + cpText(t) : '')) + '"' + (cp ? ' title="' + esc(cpText(t)) + '"' : '') + '>' +
+        '<span class="st-seed">' + (t.seed || '–') + '</span>' + logo(t.abbr) +
+        '<b class="st-abbr">' + t.abbr + cpIcon(cp) + '</b>' +
+        '<span>' + t.w + '</span><span>' + t.l + '</span><span>' + gbTxt + '</span>' +
+        '<span class="st-pace">' + (pace != null ? pace : '–') + '</span>' +
+        wide(rec(t.home)) + wide(rec(t.away)) + wide(rec(t.conf_rec)) + wide(rec(t.l10)) + wide(t.strk || '–') + '</button>';
+      if (t.seed === 6 || t.seed === 10) {
+        html += '<div class="st-cut ' + (t.seed === 6 ? 'po' : 'pi') + '" aria-hidden="true"><span>' +
+          (t.seed === 6 ? 'playoffs ↑' : 'play-in ↑') + '</span></div>';
+      }
+    });
+    return '<section class="card st-card"><div class="card-h"><h2>' + conf + ' standings</h2></div>' +
+      (hasSeeds() ? '<div class="st">' + html + '</div>' : '<p class="foot">The standings start with the first game.</p>') +
+      (last ? help('standings', '<p class="foot"><b>GB</b> = games behind the conference leader. <b>Win pace</b> = wins over a full ' +
+        '82-game season at the current winning percentage (wins ÷ games × 82), so it swings a lot early on. ' +
+        'Seeds 1–6 go straight to the playoffs, 7–10 to the play-in. Ties are broken by the record between the tied teams, then ' +
+        'conference record, then point differential; the NBA also uses division standings, so a rare tie can differ from the official seed. ' +
+        'On wider screens: Home, Away and Conf records, the last 10 games and the current streak. Tap a team for details.</p>' + cpHelp()) : '') +
+      '</section>';
   }
 
   function ladderExtent() {
@@ -467,7 +558,8 @@
   function ladderLegend() {
     return '<div class="legend" aria-hidden="true"><span><i class="lg-dot"></i>Adjusted</span><span><i class="lg-ring"></i>Raw</span>' +
       '<span><i class="lg-line" style="background:var(--up-mark)"></i>adj. higher</span>' +
-      '<span><i class="lg-line" style="background:var(--muted);opacity:.6"></i>adj. lower</span></div>';
+      '<span><i class="lg-line" style="background:var(--muted);opacity:.6"></i>adj. lower</span>' +
+      '<span>' + cpIcon(2) + 'all 5 champion marks</span><span>' + cpIcon(1) + '4 of 5</span></div>';
   }
   function ladderHTML() {
     var ext = ladderExtent();
@@ -484,7 +576,7 @@
       var a = t.nrtg_a, r = t.nrtg, lo = Math.min(a, r), hi = Math.max(a, r);
       return '<button type="button" class="lrow" data-team="' + t.abbr + '" data-conf="' + t.conf + '">' +
         '<span class="lrank"></span>' + logo(t.abbr) +
-        '<span class="lname"><b>' + t.abbr + '</b><small>' + t.w + '–' + t.l + '</small></span>' +
+        '<span class="lname"><b>' + t.abbr + '</b><small>' + t.w + '–' + t.l + '<span class="cp"></span></small></span>' +
         '<span class="track">' + grid +
         '<span class="conn' + (a > r ? ' up' : '') + '" style="left:' + x(lo) + '%;width:' + (x(hi) - x(lo)).toFixed(2) + '%"></span>' +
         '<span class="dot raw" style="left:' + x(r) + '%"></span><span class="dot" style="left:' + x(a) + '%"></span></span>' +
@@ -516,8 +608,13 @@
       $('.v-o small', r).textContent = ordinal(rr(t, 'ortg'));
       $('.v-d b', r).textContent = rv(t, 'drtg').toFixed(1);
       $('.v-d small', r).textContent = ordinal(rr(t, 'drtg'));
+      var cp = profile(t);
+      r.classList.toggle('cp2', cp === 2);
+      r.classList.toggle('cp1', cp === 1);
+      $('.cp', r).innerHTML = cpIcon(cp);
+      if (cp) r.setAttribute('title', cpText(t)); else r.removeAttribute('title');
       r.setAttribute('aria-label', t.name + ', ' + (S.mode === 'adj' ? 'adjusted' : 'raw') + ' net rating ' + sign(rv(t, 'nrtg')) +
-        ', offense ' + rv(t, 'ortg').toFixed(1) + ', defense ' + rv(t, 'drtg').toFixed(1));
+        ', offense ' + rv(t, 'ortg').toFixed(1) + ', defense ' + rv(t, 'drtg').toFixed(1) + (cp ? ', ' + cpText(t) : ''));
     });
     if (!animate) return;
     rows.forEach(function (r) {
@@ -1344,6 +1441,8 @@
       '<div class="tile"><span>Schedule</span><b>' + sign(t.sos) + '</b><small>' + ordinal(t.rk.sos) + ' toughest</small></div>' +
       '<div class="tile"><span>Pace</span><b>' + t.pace.toFixed(1) + '</b><small>poss. per game</small></div>' +
       '<div class="tile"><span>Points</span><b>' + t.ppg.toFixed(1) + '</b><small>allow ' + t.oppg.toFixed(1) + '</small></div></div>' +
+      '<p class="foot sh-cp">' + cpIcon(profile(t)) + '<b>Champion profile</b>: ' + esc(cpText(t, true)) +
+        ' (' + (S.mode === 'adj' ? 'adjusted' : 'raw') + ' ranks).</p>' +
       (t.gp < t.w + t.l ? '<p class="foot">Ratings cover ' + t.gp + ' of ' + (t.w + t.l) + ' games; ESPN’s season totals catch up a few hours after games end.</p>' : '') +
       help('team', '<p class="foot">Schedule = average adjusted net rating of the opponents faced so far. Ratings per 100 possessions; ' +
         'lower defense is better. Adjusted takes out the strength of the opponents faced.</p>') +

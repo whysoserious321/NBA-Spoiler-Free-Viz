@@ -25,6 +25,11 @@
   --tier-po: #0f8a5f;        /* standings: playoff spot (seeds 1-6) */
   --tier-pi: #b37400;        /* standings: play-in (seeds 7-10) */
   --tier-on: #ffffff;        /* seed number on those fills */
+  --champ: #8f6a00;          /* champion profile: trophy outline */
+  --champ-fill: #f0bd1a;     /* ... filled trophy */
+  --champ-wash: rgba(240, 189, 26, .14);   /* ... row highlight: all five marks */
+  --hot-rgb: 12, 163, 12;    /* career 3P% shade: this season better ... */
+  --cold-rgb: 227, 73, 72;   /* ... or worse */
   --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.05);
   --sheet-shadow: 0 -8px 40px rgba(0,0,0,.18);
   --radius: 16px;
@@ -54,6 +59,8 @@
     --down: #e66767;
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
     --tier-po: #22c088; --tier-pi: #eda100; --tier-on: #111110;
+    --champ: #f2c94c; --champ-fill: #f2c94c; --champ-wash: rgba(242, 201, 76, .12);
+    --hot-rgb: 34, 192, 136; --cold-rgb: 230, 103, 103;
     --shadow: none;
     --sheet-shadow: 0 -8px 40px rgba(0,0,0,.6);
   }
@@ -66,6 +73,8 @@
   --up: #0ca30c; --up-mark: #0ca30c; --down: #e66767;
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
   --tier-po: #22c088; --tier-pi: #eda100; --tier-on: #111110;
+  --champ: #f2c94c; --champ-fill: #f2c94c; --champ-wash: rgba(242, 201, 76, .12);
+  --hot-rgb: 34, 192, 136; --cold-rgb: 230, 103, 103;
   --shadow: none; --sheet-shadow: 0 -8px 40px rgba(0,0,0,.6);
 }
 
@@ -159,6 +168,7 @@ body.gate-open { overflow: hidden; }
   background: var(--accent); color: #fff; font-weight: 700;
 }
 .gate-none { color: var(--muted) !important; }
+.gate-txt .gate-games { margin-top: 6px; font-size: 12px; color: var(--muted); }
 .gate-link {
   display: flex; align-items: center; justify-content: center; gap: 6px;
   margin: 4px 0 2px; padding: 12px; border-radius: 14px; border: 1px dashed var(--axis);
@@ -298,6 +308,21 @@ main {
 .lval b { font-size: 15px; font-weight: 750; letter-spacing: -.01em; }
 .lval small { display: block; font-size: 10.5px; color: var(--muted); margin-top: 3px; white-space: nowrap; }
 .lrow.hide { display: none; }
+/* champion profile (ladder + standings): trophy, plus a gold wash when both criteria hold */
+.cp-ic { width: 12px; height: 12px; margin-left: 3px; vertical-align: -1px; flex: none;
+  fill: none; stroke: var(--champ); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.cp-ic.full .cup { fill: var(--champ-fill); }
+.legend .cp-ic, .foot .cp-ic { margin: 0 4px 0 0; }
+.lname small { white-space: nowrap; }
+.lrow.cp2, .st-row.cp2 { background-color: var(--champ-wash); box-shadow: inset 3px 0 0 var(--champ-fill); }
+.lrow.cp2:hover, .st-row.cp2:hover { background-color: var(--champ-wash); background-image: linear-gradient(var(--ring), var(--ring)); }
+/* four of five: no fill, a dashed gold outline (dashed = "nearly", as for the play-in ring) */
+.lrow.cp1::after, .st-row.cp1::after {
+  content: ''; position: absolute; inset: 1px; border: 1.5px dashed var(--champ); border-radius: inherit;
+  opacity: .8; pointer-events: none;
+}
+.cp-list { margin: 6px 0 0; padding-left: 18px; }
+.cp-list li { margin: 2px 0; }
 .l-cut { height: 1px; background: var(--grid); margin: 4px 0; }
 
 /* ---------------------------------------------------------------- diamond */
@@ -464,6 +489,35 @@ svg.diamond { -webkit-user-select: none; user-select: none; }
 .tp-none { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
 .tp-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--ink-2); margin: 10px 0 0; }
 .tp-legend i { display: inline-block; border-radius: 50%; vertical-align: -1px; margin-right: 4px; }
+/* with a career column (3P% page): season % over 3PM/3PA, then career % */
+.tp-axis.car, .tp-row.car { grid-template-columns: 92px minmax(0, 1fr) 46px 42px; }
+.tp-axis .colh { text-align: right; }
+.tp-row.car { height: 32px; }
+.tp-val.two { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
+.tp-val.two small { margin: 0; font-size: 10.5px; }
+.tp-car { text-align: right; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tp-car small { font-size: 10.5px; color: var(--muted); }
+.tp-row.small .tp-car { color: var(--muted); }
+.tp-row .track .ctick {
+  position: absolute; top: 50%; z-index: 1; width: 2px; height: 18px; margin: -9px 0 0 -1px; border-radius: 1px;
+  background: var(--ink-2); box-shadow: 0 0 0 1px var(--surface);
+}
+.tp-row.small .track .ctick { opacity: .5; }
+.tp-legend i.tp-lg-car { width: 2px; height: 11px; border-radius: 1px; background: var(--ink-2); }
+/* a value outside the zoomed scale: small arrow at the edge */
+.tp-row .track .bub.clip { width: 9px; height: 10px; border-radius: 0; box-shadow: none; }
+.tp-row .track .bub.clip.lo { transform: translate(0, -50%); clip-path: polygon(0 50%, 100% 0, 100% 100%); }
+.tp-row .track .bub.clip.hi { transform: translate(-100%, -50%); clip-path: polygon(100% 50%, 0 0, 0 100%); }
+/* career vs this season: green = better this season, red = worse (darker = bigger gap) */
+.tp-car[class*="hot"], .tp-car[class*="cold"], .tp-k { padding: 1px 4px; border-radius: 4px; color: var(--ink); }
+.tp-row .tp-car[class*="hot"], .tp-row .tp-car[class*="cold"] { justify-self: end; }
+.hot1 { background: rgba(var(--hot-rgb), .13); }
+.hot2 { background: rgba(var(--hot-rgb), .26); }
+.hot3 { background: rgba(var(--hot-rgb), .42); }
+.cold1 { background: rgba(var(--cold-rgb), .13); }
+.cold2 { background: rgba(var(--cold-rgb), .26); }
+.cold3 { background: rgba(var(--cold-rgb), .42); }
+.tp-k { font-weight: 600; }
 
 /* ------------------------------------------------------------------ sheet */
 .sheet-backdrop {
@@ -607,6 +661,27 @@ svg.diamond { -webkit-user-select: none; user-select: none; }
 .od-val small.bad { color: var(--neg); }
 .od-more { display: block; margin: 10px auto 0; }
 
+/* standings (under the ladder) */
+.st-row {
+  position: relative; display: grid; grid-template-columns: 18px 22px minmax(0, 1fr) 24px 24px 34px 36px;
+  align-items: center; column-gap: 6px; width: 100%; height: 38px; padding: 0 4px; border: 0; border-radius: 8px;
+  background: none; color: var(--ink); cursor: pointer; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums;
+}
+.st-row:hover { background-color: var(--surface-2); }
+.st-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.st-row > :nth-child(3) { text-align: left; }
+.st-row .logo { width: 22px; height: 22px; }
+.st-head { height: 30px; cursor: default; border-radius: 0; border-bottom: 1px solid var(--grid); margin-bottom: 2px;
+  font-size: 10.5px; line-height: 1.05; color: var(--muted); }
+.st-head:hover { background: none; }
+.st-seed { font-size: 12px; color: var(--muted); }
+.st-abbr { font-size: 14px; font-weight: 700; white-space: nowrap; }
+.st-pace { font-weight: 700; }
+.st-cut { position: relative; height: 0; margin: 3px 4px; border-top: 2px solid var(--tier-po); }
+.st-cut.pi { border-top-style: dashed; border-top-color: var(--tier-pi); }
+.st-cut span { position: absolute; right: 0; top: -8px; padding: 0 0 0 6px; background: var(--surface);
+  font-size: 10px; line-height: 14px; color: var(--ink-2); }
+
 /* ---------------------------------------------------------------- desktop */
 .wide-only { display: none; }
 @media (min-width: 640px) {
@@ -614,6 +689,9 @@ svg.diamond { -webkit-user-select: none; user-select: none; }
   .wide-only { display: block; }
   .narrow-only { display: none; }
   .tp-axis, .tp-row { grid-template-columns: 140px minmax(0, 1fr) 96px; }
+  .tp-axis.car, .tp-row.car { grid-template-columns: 140px minmax(0, 1fr) 64px 56px; }
+  .st-row { grid-template-columns: 24px 26px minmax(0, 1fr) 30px 30px 40px 44px 48px 48px 48px 40px 40px; column-gap: 8px; }
+  .st-row .logo { width: 24px; height: 24px; }
   .lval small.narrow-only { display: none; }
 }
 @media (min-width: 1000px) {

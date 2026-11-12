@@ -61,6 +61,8 @@ def _walk(rng, end_price, start_ts, end_ts, step=43200):
 
 def build(seed=11):
     rng = random.Random(seed)
+    # career 3P% and standings splits use their own stream, so every other demo number stays as it was
+    xr = random.Random(seed + 1000)
     lg = 114.0
     now = int(datetime.now(timezone.utc).timestamp())
 
@@ -130,6 +132,13 @@ def build(seed=11):
                 'ts': round(100 * pts / (2 * shots), 1), 'fga_g': round(fga, 1),
                 'q': gp >= 6 and mpg >= 12, 'head': False,
             }
+            # made-up career 3PM/3PA (this season included); some are in their first season
+            if xr.random() < 0.12:
+                players[str(pid)].update(ctpm=tpm_tot, ctpa=tpa_tot, first=True)
+            else:
+                prev_a = int(tpa * xr.uniform(25, 70) * xr.randint(1, 11))
+                prev_m = int(round(prev_a * min(0.47, max(0.15, tp_pct + xr.gauss(0, 0.035)))))
+                players[str(pid)].update(ctpm=tpm_tot + prev_m, ctpa=tpa_tot + prev_a, first=False)
             rosters[abbr].append(str(pid))
         rosters[abbr].sort(key=lambda p: (-players[p]['tpa'], -players[p]['mpg']))
 
@@ -165,9 +174,25 @@ def build(seed=11):
         roster = rosters[abbr]
         tpm = sum(players[p]['tpm'] for p in roster)
         tpa = sum(players[p]['tpa'] for p in roster)
+        # standings splits: a made-up game-by-game sequence with exactly w wins
+        seq = ['W'] * w + ['L'] * (gp - w)
+        xr.shuffle(seq)
+        at_home = [i % 2 == 0 for i in range(gp)]
+        xr.shuffle(at_home)
+        in_conf = [xr.random() < 0.6 for _ in range(gp)]
+        rec = lambda pick: [sum(1 for i in range(gp) if pick(i) and seq[i] == 'W'),
+                            sum(1 for i in range(gp) if pick(i) and seq[i] == 'L')]
+        run = 0
+        for res in reversed(seq):            # (not `r`: that is this team's ratings)
+            if res != seq[-1]:
+                break
+            run += 1
         team_rows.append({
             'abbr': abbr, 'name': name, 'nick': nick, 'conf': 'East' if abbr in model.EAST else 'West',
             'color': color, 'alt': '#cccccc', 'w': w, 'l': gp - w, 'gp': gp,
+            'home': rec(lambda i: at_home[i]), 'away': rec(lambda i: not at_home[i]),
+            'conf_rec': rec(lambda i: in_conf[i]), 'l10': rec(lambda i: i >= gp - 10),
+            'strk': f'{seq[-1]}{run}' if seq else None,
             **{k: round(r[k], 2) for k in ('ortg', 'drtg', 'nrtg', 'ortg_a', 'drtg_a', 'nrtg_a', 'sos')},
             'pace': round(r['pace'], 1), 'ppg': round(r['ortg'] * r['pace'] / 100, 1),
             'oppg': round(r['drtg'] * r['pace'] / 100, 1),

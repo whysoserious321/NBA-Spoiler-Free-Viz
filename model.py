@@ -118,6 +118,18 @@ def conference_seeds(record, conf, h2h=None, conf_record=None, diff=None):
     return seeds
 
 
+def _streak(res):
+    """'W3' / 'L1' from a team's results, oldest first; None before its first game."""
+    if not res:
+        return None
+    n = 0
+    for r in reversed(res):
+        if r != res[-1]:
+            break
+        n += 1
+    return f'{res[-1]}{n}'
+
+
 def _team_for(name, teams):
     """Map a Polymarket outcome like 'San Antonio Spurs' to a team abbreviation."""
     low = (name or '').lower()
@@ -138,6 +150,8 @@ def build(games, teams_meta, season, label, norm_name):
     # ---- results: record + who played whom
     opps, wins, losses = defaultdict(list), defaultdict(int), defaultdict(int)
     h2h, conf_w, conf_l, diff = defaultdict(int), defaultdict(int), defaultdict(int), defaultdict(int)
+    home_rec, away_rec = defaultdict(lambda: [0, 0]), defaultdict(lambda: [0, 0])
+    results = defaultdict(list)                  # 'W' / 'L' per team, oldest first (games come in date order)
     conf_of = lambda abbr: 'East' if abbr in EAST else 'West'
     through = None
     for g in games:
@@ -147,6 +161,10 @@ def build(games, teams_meta, season, label, norm_name):
         win, lose = (h, a) if h['score'] > a['score'] else (a, h)
         wins[win['abbr']] += 1
         losses[lose['abbr']] += 1
+        results[win['abbr']].append('W')
+        results[lose['abbr']].append('L')
+        home_rec[h['abbr']][0 if win is h else 1] += 1
+        away_rec[a['abbr']][0 if win is a else 1] += 1
         h2h[(win['abbr'], lose['abbr'])] += 1
         if conf_of(win['abbr']) == conf_of(lose['abbr']):
             conf_w[win['abbr']] += 1
@@ -256,6 +274,9 @@ def build(games, teams_meta, season, label, norm_name):
             'conf': conf_of(abbr),
             'color': meta.get('color', '#777777'), 'alt': meta.get('alt', '#cccccc'),
             'w': wins[abbr], 'l': losses[abbr], 'gp': s['gp'], 'seed': seeds.get(abbr),
+            'home': home_rec[abbr], 'away': away_rec[abbr], 'conf_rec': [conf_w[abbr], conf_l[abbr]],
+            'l10': [results[abbr][-10:].count('W'), results[abbr][-10:].count('L')],
+            'strk': _streak(results[abbr]),
             'ortg': round(ortg[abbr], 2), 'drtg': round(drtg[abbr], 2), 'nrtg': round(nrtg[abbr], 2),
             'ortg_a': round(ortg_a[abbr], 2), 'drtg_a': round(drtg_a[abbr], 2),
             'nrtg_a': round(nrtg_a[abbr], 2),

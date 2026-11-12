@@ -16,11 +16,11 @@ is slow to update its season totals).
 <p align="center">
   <img src="docs/screenshots/start.png" width="200" alt="Start screen: live, up to a date, or demo">
   <img src="docs/screenshots/diamond.png" width="200" alt="Net rating diamond with playoff-picture rings">
-  <img src="docs/screenshots/ladder.png" width="200" alt="Net rating ladder">
-  <img src="docs/screenshots/team.png" width="200" alt="Team sheet with 3P% chart">
+  <img src="docs/screenshots/ladder.png" width="200" alt="Net rating ladder with champion-profile trophies">
+  <img src="docs/screenshots/team.png" width="200" alt="Team sheet with champion profile and 3P% chart">
 </p>
 <p align="center">
-  <img src="docs/screenshots/threes.png" width="200" alt="Spoiler-free 3-point page">
+  <img src="docs/screenshots/threes.png" width="200" alt="Spoiler-free 3-point page with season and career 3P%">
   <img src="docs/screenshots/leaders.png" width="200" alt="Season leaders">
   <img src="docs/screenshots/mvp.png" width="200" alt="MVP odds">
   <img src="docs/screenshots/title.png" width="200" alt="Title odds against net rating">
@@ -31,8 +31,9 @@ is slow to update its season totals).
 ## Features
 
 - **Live, or up to a date.** Every page load starts with a short question: *Live*, *Up to a date*, or
-  *Demo*. Pick the last game day you have watched and the whole app (ratings, records, leaders, odds,
-  odds trends and the 3P% page) shows only what was known the morning after it. The start screen
+  *Demo*. Saved days are listed by the time of their refresh in your own time zone; pick the last one
+  before the games you haven't watched and the whole app (ratings, records, leaders, odds,
+  odds trends and the 3P% page) shows only what was known then. The start screen
   also links straight to the spoiler-free 3P% page. See [Live or up to a date](#live-or-up-to-a-date).
 - **Net rating diamond.** Offensive vs. defensive rating rotated 45° so that *height is net rating*
   (after Owen Phillips' "diamond plots" in The F5), with a small drawn key showing how to read it. Switch between raw and opponent-adjusted
@@ -47,10 +48,19 @@ is slow to update its season totals).
   show the top 10, and expand to every team.
 - **Ladder.** The same ratings as a ranked list: a ring for the raw net rating, a dot for the adjusted
   one, so you can see whose schedule flattered them.
+- **Standings.** Under the ladder, the real NBA standings per conference: W, L, games behind and
+  **win pace** (wins over 82 games at the current winning percentage), with the playoff and play-in
+  cut lines. Wider screens add home, away and conference records, the last 10 games and the streak.
+- **Champion profile.** In the ladder and the standings, a gold trophy marks teams with the five marks
+  nearly every recent champion had: top-3 seed, top-5 net rating, top-10 defense, top-10 offense and a
+  52+ win pace (filled, with a gold row, for all five; an outline trophy and a dashed gold outline for four of five).
+  The team sheet says which marks a team misses. See [Standings and champion profile](#standings-and-champion-profile).
 - **Team sheet.** Record and conference seed; offense, defense and net rating (adjusted and raw, with league ranks), strength of
-  schedule, pace, and a compact 3P% chart for every player on the roster.
+  schedule, pace, which champion marks the team has, and a compact 3P% chart for every player on the roster.
 - **Spoiler-free 3P% page** (`/threes`). Pick one or two teams, or tap one of today's matchups, and see
-  each player's season 3-point shooting. The page loads its own minimal JSON, so it never receives
+  each player's season 3P% next to their career 3P% (shaded green or red when this season is above or
+  below it), best shooters first, on a scale zoomed to where most shooters are. See
+  [The 3P% page](#the-3p-page). The page loads its own minimal JSON, so it never receives
   scores, records, ratings, standings or odds. It asks the same live / up-to-a-date question, has the
   same bottom tab bar as the dashboard, and can be installed on its own home-screen icon.
 - **Season leaders.** Points, rebounds, assists, 3-pointers made, steals, blocks and true shooting:
@@ -76,8 +86,10 @@ snapshot:
 - the odds trend lines stop at that moment, so no later movement shows;
 - the 3P% page shows the *next* day's matchups (the games you are about to watch).
 
-The start screen lists only days that were saved. If you watched through a day that is not listed,
-pick the closest earlier one. The header pill (*Live*, *To Nov 7* or *Demo data*) shows the current
+The start screen lists each saved day by **when its refresh ran, in your own time zone** (e.g.
+*Thu, Nov 12, 13:00*), with the US game date it covers underneath, so you can pick "what the app knew
+on Thursday morning" without converting time zones. Pick the last refresh before the first game you
+haven't watched. The header pill (*Live*, *As of Nov 12, 13:00* or *Demo data*) shows the current
 choice; tap it to change. Links between the dashboard and the 3P% page keep the choice, including
 the bottom tab bar on the 3P% page: with *Live* chosen there, tapping *Ratings*, *Leaders*, *MVP* or
 *Title* opens the live dashboard without asking again.
@@ -88,7 +100,9 @@ Rules that keep snapshots spoiler-safe:
   started. A refresh in the middle of a game night does not write one.
 - A later refresh for the same day replaces it. That is how the hourly catch-up fixes a morning when
   ESPN's season totals still lagged; if they never catch up before 14:00, that day's ratings miss
-  the last games for a few teams, and the team sheet says so.
+  the last games for a few teams, and the team sheet says so. On such mornings the start screen shows
+  the time of the last catch-up (for example 13:00) rather than 08:00, because that is when the data
+  you would see was fetched.
 - Days before you installed NBAViz cannot be recovered, because ESPN only offers season-to-date totals.
 
 Storage is small: about 37 KB per day compressed, roughly 6 MB for a whole regular season. Snapshots
@@ -161,6 +175,49 @@ The same key is in the app: tap *How to read this* under the diamond.
 - The number is points scored (or allowed) per 100 possessions, with the gap to the average under it.
 - Both charts use the same scale in both modes, so bars can be compared across them.
 
+### Standings and champion profile
+
+<p align="center">
+  <img src="docs/screenshots/standings.png" width="200" alt="East standings with games behind, win pace and champion-profile trophies">
+</p>
+
+- With *Ladder* picked, the conference standings sit under it: seed, W, L, **GB** (games behind the
+  conference leader) and **Win pace** (wins over 82 games at the current winning percentage). Wider
+  screens add home, away and conference records, the last 10 games and the streak.
+- The solid green line follows the 6th seed (straight into the playoffs), the dashed amber one the
+  10th (the play-in), the same colours as the rings on the diamond.
+- A **gold trophy** marks the champion profile, in the standings and in the ladder:
+  **filled, with a gold row** = all five marks below; **outline trophy and a dashed gold outline** =
+  four of five. The team sheet lists the marks a team misses.
+
+| Mark | Champions that had it | Source |
+|---|---|---|
+| Top-3 seed in its conference | 42 of 43 since 1984 (only the 6th-seeded 1995 Rockets were lower) | [Land of Basketball](https://landofbasketball.com/championships/champions_by_seed.htm) |
+| Top-5 net rating | 16 of 20 from 2000 to 2019, none worse than 10th | [Denver Stiffs](https://www.denverstiffs.com/2020/3/30/21199077/stat-of-the-week-how-champions-are-built-in-the-nba) |
+| Top-10 defense | 23 of 26 from 2001 to 2026 | [Data Dunk](https://datadunknba.substack.com/p/does-defense-win-championships-nba) |
+| Top-10 offense | 22 of 26 from 2001 to 2026 (19 were top 10 at both ends) | [Data Dunk](https://datadunknba.substack.com/p/does-defense-win-championships-nba) |
+| 52+ win pace (.634 or better) | every champion since 2005 | [theScore](https://www.thescore.com/nba/news/2625179), plus the 2023–26 champions' records |
+
+- Net, offense and defense ranks are league-wide (of 30) and follow the Raw / Adjusted switch; the
+  win-pace mark uses the exact winning percentage, not the rounded column.
+- It is a historical pattern, not a probability. The market's title odds are on the *Title* tab.
+
+### The 3P% page
+
+<p align="center">
+  <img src="docs/screenshots/threes.png" width="200" alt="3-point page with season and career 3P%">
+</p>
+
+- Players are sorted by this season's 3P%, best first; players with fewer than 10 attempts are faded
+  and listed last.
+- The dot is this season's 3P% (blue above the league average, red below, bigger = more attempts);
+  the small dark tick is the player's **career** 3P% (every regular season, this one included).
+- The **Career** number is shaded green when this season beats it and red when it falls short;
+  darker means a bigger gap (1, 3 and 6+ points). No shade under 10 attempts.
+- The scale is zoomed to the league average ± 7 points (about 29–43%), where nearly every career mark
+  and most season numbers sit. Anyone further out is drawn as a small arrow at the edge; the numbers on
+  the right are always exact. Both teams on the page share the scale.
+
 ## How the ratings are computed
 
 The definitions follow Basketball-Reference's glossary; the numbers are computed from ESPN's season totals.
@@ -191,6 +248,15 @@ tied teams, then conference record, then point differential. The NBA's official 
 division standings, so a rare tie can come out differently from the official seed. Seeds come from
 the game results, so they work for *Up to a date* too (snapshots saved before seeds existed fall back
 to win percentage, then net rating).
+
+**Standings** list each conference by seed. *GB* (games behind) is `((W₁ − W) + (L − L₁)) / 2` against
+the conference's 1st seed. *Win pace* is `W ÷ (W + L) × 82`, the record carried over a full season; it is
+not a projection (a Pythagorean or net-rating projection would predict better, and swings less early on).
+
+**Career 3P%** on the 3P% page is every regular season so far, this one included. Past seasons come
+from the same ESPN player endpoint as the current one, fetched once per season and kept in
+`data/cache/career/`; the first refresh after installing fetches them all (about 20 requests), later
+refreshes fetch nothing new until the next season starts.
 
 Strength of schedule is the average adjusted net rating of the opponents a team has faced.
 ESPN's season totals can lag the scoreboard by a game for a few hours after games end; the
@@ -276,9 +342,9 @@ WantedBy=multi-user.target
 |---|---|
 | `/` | Dashboard; asks live / up to a date / demo unless `?live=1`, `?date=YYYY-MM-DD` or `?demo=1` is given |
 | `/threes` | Spoiler-free 3-point page, same choice (`#BOS-NYK` preselects teams) |
-| `/api/dates` | Saved days you can pick (newest first) and how far live data goes |
+| `/api/dates` | Saved days you can pick (newest first), when each was saved, and how far live data goes |
 | `/api/dashboard` | Everything the dashboard shows, as JSON (`?date=` or `?demo=1` as above) |
-| `/api/threes` | Rosters with 3PM/3PA, team 3P% and matchups (today's, or the day after `?date=`). No results of any kind |
+| `/api/threes` | Rosters with 3PM/3PA (season and career), team 3P% and matchups (today's, or the day after `?date=`). No results of any kind |
 | `/api/status` | Refresh schedule status |
 | `/img/logos/…`, `/img/heads/…` | Cached team logos and player headshots |
 
@@ -289,6 +355,7 @@ WantedBy=multi-user.target
 | Team season totals incl. opponent totals | ESPN `statistics/byteam` | 1 |
 | Results, to know who played whom | ESPN scoreboard, one per day; finished days are cached forever | 1–2 |
 | Player per-game stats | ESPN `statistics/byathlete` (all players and qualified players) | 2 |
+| Past seasons' 3PM/3PA, for career 3P% | ESPN `statistics/byathlete` per earlier season, cached forever | 0 (about 20 once) |
 | Championship and MVP odds, price history | Polymarket Gamma and CLOB APIs (read-only) | ~14 |
 | Logos and headshots | ESPN's image CDN, downloaded once into `data/img/` | 0 after the first run |
 

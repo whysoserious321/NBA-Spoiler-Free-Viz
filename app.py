@@ -270,25 +270,77 @@ def _games_on(day):
             for ev in data.get('events', []) if ev.get('away') and ev.get('home')]
 
 
+_saved_cache = {}
+
+
+def _snapshot_saved(day):
+    """When the snapshot for `day` was saved (its refresh time, UTC ISO). Only the
+    timestamp is kept in memory, re-read when the file changes."""
+    path = os.path.join(scrape.SNAP_DIR, f'{day}.json.gz')
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return None
+    hit = _saved_cache.get(day)
+    if not hit or hit[0] != mtime:
+        try:
+            gen = scrape.read_snapshot(day).get('generated')
+        except (OSError, ValueError, EOFError):
+            gen = None
+        hit = (mtime, gen)
+        _saved_cache[day] = hit
+    return hit[1]
+
+
 @app.route('/api/dates')
 def api_dates():
-    """Days you can pick in the start screen (newest first) and how far live data goes."""
+    """Days you can pick in the start screen (newest first), when each was saved,
+    and how far live data goes."""
     live = _load_json(scrape.DASHBOARD) if os.path.exists(scrape.DASHBOARD) else None
-    return jsonify({'dates': _snapshot_dates(), 'live_through': (live or {}).get('through')})
+    dates = _snapshot_dates()
+    return jsonify({'dates': dates, 'saved': {d: _snapshot_saved(d) for d in dates},
+                    'live_through': (live or {}).get('through'),
+                    'live_generated': (live or {}).get('generated')})
+
+
+def _career_base(season_label):
+    """3PM/3PA summed over every earlier season (scrape.update_career), or None
+    when it is missing or belongs to another season."""
+    try:
+        end_year = int(str(season_label)[:4]) + 1
+    except ValueError:
+        return None
+    if not os.path.exists(scrape.CAREER_BASE):
+        return None
+    base = _load_json(scrape.CAREER_BASE) or {}
+    return base.get('players') if base.get('season') == end_year else None
+
+
+def _with_career(row, pid, p, base):
+    """Adds career 3PM/3PA (this season included) and 'first' for a first season.
+    Demo players carry their own made-up career numbers."""
+    if 'ctpa' in p:
+        row.update(ctpm=p['ctpm'], ctpa=p['ctpa'], first=bool(p.get('first')))
+    elif base is not None:
+        prev = base.get(pid)
+        row.update(ctpm=p['tpm'] + (prev[0] if prev else 0), ctpa=p['tpa'] + (prev[1] if prev else 0),
+                   first=prev is None)
+    return row
 
 
 @app.route('/api/threes')
 def api_threes():
     d, mode, day = _source()
     players = d.get('players', {})
+    base = None if mode == 'demo' else _career_base(d.get('season'))
     teams = []
     for t in sorted(d['teams'], key=lambda t: t['name']):
-        roster = [players[pid] for pid in t.get('roster', []) if pid in players]
+        roster = [(pid, players[pid]) for pid in t.get('roster', []) if pid in players]
         teams.append({
             'abbr': t['abbr'], 'name': t['name'], 'nick': t.get('nick'),
             'tp': t.get('tp'), 'tpa_g': t.get('tpa_g'),
-            'players': [{'name': p['name'], 'short': p.get('short'), 'pos': p.get('pos'),
-                         'tpm': p['tpm'], 'tpa': p['tpa']} for p in roster],
+            'players': [_with_career({'name': p['name'], 'short': p.get('short'), 'pos': p.get('pos'),
+                                      'tpm': p['tpm'], 'tpa': p['tpa']}, pid, p, base) for pid, p in roster],
         })
     if mode == 'demo':
         games_date, games = None, [{'away': a, 'home': h} for a, h in DEMO_GAMES]

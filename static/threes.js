@@ -32,6 +32,23 @@
   }
   function team(abbr) { return D.teams.filter(function (t) { return t.abbr === abbr; })[0]; }
 
+  /* The 3P% range the charts draw: the league average ± ZOOM points (about 29-43%),
+     where nearly every career mark and the bulk of season numbers sit. Further out
+     is drawn as an arrow at the edge. One range for every team, so charts compare. */
+  var ZOOM = 7;
+  function domain() {
+    var lg = D.league_tp;
+    if (lg == null) {                                 // no league figure: centre on the players' median
+      var vals = [];
+      D.teams.forEach(function (t) { t.players.forEach(function (p) { if (p.tpa >= 10) vals.push(100 * p.tpm / p.tpa); }); });
+      if (!vals.length) return null;                  // nothing yet: the chart's own 0-70 range
+      vals.sort(function (x, y) { return x - y; });
+      lg = vals[Math.floor(vals.length / 2)];
+    }
+    var lo = Math.round(lg - ZOOM);
+    return [lo, lo + 2 * ZOOM];
+  }
+
   // Live, up to a saved date, or demo: chosen on the start screen (shared with the dashboard).
   function start(c) {
     choice = c;
@@ -74,7 +91,7 @@
   }
 
   function render(scrollTo) {
-    var p = NBAGate.pill(choice);
+    var p = NBAGate.pill(choice, D.generated);
     pill.textContent = p.text;
     pill.className = 'mode-pill ' + p.cls;
     pill.hidden = false;
@@ -101,15 +118,18 @@
     if (!sel.length) {
       html += '<section class="card empty"><p>Tap a logo, or a game above, to see every player’s 3P%.</p></section>';
     }
+    var dom = domain();
     sel.forEach(function (abbr) {
       var t = team(abbr);
       html += '<section class="card tp-card" id="tp-' + abbr + '"><div class="sh-top" style="margin:0 0 10px">' + logo(abbr) +
         '<div><h3>' + esc(t.name) + '</h3></div></div>' +
-        window.tpChart(t, t.players, D.league_tp, { heading: false }) + '</section>';
+        window.tpChart(t, t.players, D.league_tp, { heading: false, sort: 'pct', domain: dom }) + '</section>';
     });
     html += '<p class="credit">' + (choice.mode === 'demo' ? 'Demo data: every number and player here is made up.'
-      : choice.mode === 'date' ? 'Season totals through the games of ' + NBAGate.day(choice.date, true) + ' only. Data: ESPN.'
-        : esc(D.season || '') + ' season totals, updated ' + relTime(D.generated) + ' (daily, 08:00). Data: ESPN.') +
+      : choice.mode === 'date' ? 'Season totals as of the refresh on ' + (NBAGate.stamp(D.generated) ? NBAGate.stamp(D.generated) + ' (' + NBAGate.zone() + '), ' : '') +
+          'games through ' + NBAGate.day(choice.date, true) + ' (US date) only. Data: ESPN.'
+        : esc(D.season || '') + ' season totals, updated ' + (NBAGate.stamp(D.generated) ? NBAGate.stamp(D.generated) + ' (' + relTime(D.generated) + ')' : relTime(D.generated)) +
+          ', refreshed daily. Data: ESPN.') +
       ' <button type="button" data-act="gate">Change</button><br>' +
       '<a href="/' + NBAGate.linkQuery(choice) + '" class="inline-link">Full dashboard ↗</a> (results, ratings and odds' +
       (choice.mode === 'date' ? ', also only up to that date)' : ')') + '</p>';
