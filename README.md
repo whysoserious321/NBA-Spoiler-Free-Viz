@@ -128,7 +128,13 @@ the chart reads (`<end year>.json`, about 60 KB). Stage them with `git add data/
 snapshots, these could be fetched from ESPN again (about 25 minutes per season); the backup saves that
 and keeps them if ESPN ever drops old play-by-play. A fresh clone has the career hot zones straight
 away, and `python3 scrape.py --offline` recounts the zone totals from the raw files if the zone shapes
-change. The current season's shots stay local until it becomes an earlier season.
+change.
+
+This season's shots are backed up too, one file per game day in `data/cache/shots/<end year>/days/`
+(about 4 KB per game, roughly 5 MB over a season; a day's file only changes if one of its games was
+missing), so they show up next to each morning's saved day: `git add data/snapshots data/cache/shots`
+stages both. The season index next to them (`index.json`) is rebuilt from these files on every
+refresh and stays out of git, like the rest of `data/`.
 
 ## Reading the diamond
 
@@ -451,7 +457,7 @@ static/tpchart.js   the 3P% chart shared by both pages
 static/hotspot.js   the hot-zone chart (3P% page player sheet)
 static/app.css      styles, light and dark
 static/sw.js        service worker (network first, offline fallback)
-data/               generated, git-ignored except snapshots/ and cache/shots/past/: dashboard.json,
+data/               generated, git-ignored except snapshots/, cache/shots/past/ and cache/shots/<year>/days/: dashboard.json,
                     demo.json, demo_shots.json, snapshots/, caches (cache/shots/ = shot locations), images
 ```
 
