@@ -114,11 +114,21 @@ are kept until you delete them; removing a file simply removes that day from the
 
 ### Backing up saved days
 
-Snapshots can't be rebuilt later (ESPN only serves season-to-date totals), so they are the one part of
-`data/` that is kept in git; everything else in `data/` stays git-ignored. New and replaced days show up
-in `git status` like any other change and are backed up with your next commit and push (stage them with
-`git add -A` or `git add data/snapshots`; `git commit -a` alone skips brand-new files). A fresh clone
-brings the saved days with it. In this repository the snapshots are public, like the code.
+Snapshots can't be rebuilt later (ESPN only serves season-to-date totals), so they are kept in git,
+together with the earlier seasons' shot data for the career hot zones (see below); everything else in
+`data/` stays git-ignored. New and replaced days show up in `git status` like any other change and are
+backed up with your next commit and push (stage them with `git add -A` or `git add data/snapshots`;
+`git commit -a` alone skips brand-new files). A fresh clone brings the saved days with it. In this
+repository the snapshots are public, like the code.
+
+The earlier seasons' shot data is backed up the same way: each season the morning refresh fetches adds
+two files to `data/cache/shots/past/`, written once and never changed. One holds every shot as
+`[player id, x, y, made, three]` (`<end year>.raw.json.gz`, about 1 MB); the other holds the zone totals
+the chart reads (`<end year>.json`, about 60 KB). Stage them with `git add data/cache/shots/past`. Unlike
+snapshots, these could be fetched from ESPN again (about 25 minutes per season); the backup saves that
+and keeps them if ESPN ever drops old play-by-play. A fresh clone has the career hot zones straight
+away, and `python3 scrape.py --offline` recounts the zone totals from the raw files if the zone shapes
+change. The current season's shots stay local until it becomes an earlier season.
 
 ## Reading the diamond
 
@@ -260,7 +270,8 @@ How the data is collected: each refresh fetches the play-by-play of every newly 
 request each) and keeps only the shot itself (shooter, x/y, made, 2 or 3), never scores. The earlier
 seasons for *Career* are fetched one per day after the morning refresh, newest first (about 1,230 games
 and 25 minutes each), so career zones fill in over the first five days; until then the career view says
-it is still filling in. `python3 scrape.py --shots-fill` fetches every missing season at once.
+it is still filling in. `python3 scrape.py --shots-fill` fetches every missing season at once. Finished
+earlier seasons are kept in git like the saved days (see [Backing up saved days](#backing-up-saved-days)).
 
 ESPN marks a shot as a 2 or a 3 reliably from 2022-23 on. For older games, a made shot uses its points,
 and a miss uses the play text or its distance (24+ ft, or a corner shot beyond 22 ft). Checked against
@@ -440,8 +451,8 @@ static/tpchart.js   the 3P% chart shared by both pages
 static/hotspot.js   the hot-zone chart (3P% page player sheet)
 static/app.css      styles, light and dark
 static/sw.js        service worker (network first, offline fallback)
-data/               generated, git-ignored except snapshots/: dashboard.json, demo.json,
-                    demo_shots.json, snapshots/, caches (cache/shots/ = shot locations), images
+data/               generated, git-ignored except snapshots/ and cache/shots/past/: dashboard.json,
+                    demo.json, demo_shots.json, snapshots/, caches (cache/shots/ = shot locations), images
 ```
 
 ## Disclaimer

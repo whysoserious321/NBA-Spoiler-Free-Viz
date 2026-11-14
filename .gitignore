@@ -1,8 +1,15 @@
-# Everything the refresh writes stays local, except the saved game days:
-# they are committed with the code, so GitHub keeps a backup of them.
+# Everything the refresh writes stays local, except the saved game days and
+# the earlier seasons' shot data for the career hot zones: they are committed
+# with the code, so GitHub keeps a backup of them.
 data/*
 !data/snapshots/
 data/snapshots/.tmp_*
+!data/cache/
+data/cache/*
+!data/cache/shots/
+data/cache/shots/*
+!data/cache/shots/past/
+data/cache/shots/past/.tmp_*
 __pycache__/
 *.pyc
 *.log
