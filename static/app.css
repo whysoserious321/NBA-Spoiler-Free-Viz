@@ -30,6 +30,9 @@
   --champ-wash: rgba(240, 189, 26, .14);   /* ... row highlight: all five marks */
   --hot-rgb: 12, 163, 12;    /* career 3P% shade: this season better ... */
   --cold-rgb: 227, 73, 72;   /* ... or worse */
+  --hz-hot-rgb: 214, 48, 42;   /* hot zones (NBA 2K style): red = better than the league */
+  --hz-cold-rgb: 34, 98, 204;  /* ... blue = worse */
+  --hz-avg: #e2e1da;           /* ... about average */
   --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.05);
   --sheet-shadow: 0 -8px 40px rgba(0,0,0,.18);
   --radius: 16px;
@@ -61,6 +64,7 @@
     --tier-po: #22c088; --tier-pi: #eda100; --tier-on: #111110;
     --champ: #f2c94c; --champ-fill: #f2c94c; --champ-wash: rgba(242, 201, 76, .12);
     --hot-rgb: 34, 192, 136; --cold-rgb: 230, 103, 103;
+    --hz-hot-rgb: 240, 84, 70; --hz-cold-rgb: 74, 140, 240; --hz-avg: #3b3b38;
     --shadow: none;
     --sheet-shadow: 0 -8px 40px rgba(0,0,0,.6);
   }
@@ -75,6 +79,7 @@
   --tier-po: #22c088; --tier-pi: #eda100; --tier-on: #111110;
   --champ: #f2c94c; --champ-fill: #f2c94c; --champ-wash: rgba(242, 201, 76, .12);
   --hot-rgb: 34, 192, 136; --cold-rgb: 230, 103, 103;
+  --hz-hot-rgb: 240, 84, 70; --hz-cold-rgb: 74, 140, 240; --hz-avg: #3b3b38;
   --shadow: none; --sheet-shadow: 0 -8px 40px rgba(0,0,0,.6);
 }
 
@@ -487,6 +492,58 @@ svg.diamond { -webkit-user-select: none; user-select: none; }
 .tp-val b { font-weight: 700; }
 .tp-val small { color: var(--muted); margin-right: 5px; }
 .tp-none { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+.tp-none-p { border: 0; background: none; padding: 2px 0; font: inherit; color: var(--accent); cursor: pointer; }
+
+/* --------------------------------------------- hot zones (3P% page sheet) */
+.hz-top { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 10px; }
+.hz-span { font-size: 12px; color: var(--ink-2); }
+.hz-court { display: block; width: 100%; max-width: 420px; margin: 0 auto; overflow: visible; }
+.hz-t {
+  stroke: var(--surface); stroke-width: 1.5px; vector-effect: non-scaling-stroke;
+  cursor: pointer; outline: none; transition: fill .15s;
+}
+.hz-t.n { fill: var(--hz-avg); }
+.hz-t.h1 { fill: rgba(var(--hz-hot-rgb), .32); }
+.hz-t.h2 { fill: rgba(var(--hz-hot-rgb), .6); }
+.hz-t.h3 { fill: rgba(var(--hz-hot-rgb), .9); }
+.hz-t.c1 { fill: rgba(var(--hz-cold-rgb), .32); }
+.hz-t.c2 { fill: rgba(var(--hz-cold-rgb), .6); }
+.hz-t.c3 { fill: rgba(var(--hz-cold-rgb), .9); }
+.hz-t.few { fill: url(#hz-hatch); }
+.hz-t:focus-visible { stroke: var(--accent); stroke-width: 3px; }
+.hz-hatch-bg { fill: var(--surface-2); }
+.hz-hatch-ln { stroke: var(--axis); stroke-width: .35; }
+.hz-lines { fill: none; stroke: var(--ink); stroke-opacity: .3; stroke-width: 1.2px; vector-effect: non-scaling-stroke; pointer-events: none; }
+.hz-lines * { vector-effect: non-scaling-stroke; }
+.hz-sel { fill: none; stroke: var(--ink); stroke-width: 2.5px; vector-effect: non-scaling-stroke; stroke-linejoin: round; pointer-events: none; }
+.hz-lbl {
+  font-size: 2.2px; font-weight: 750; text-anchor: middle; dominant-baseline: central; fill: var(--ink);
+  paint-order: stroke; stroke: var(--surface); stroke-width: .45px; stroke-linejoin: round; pointer-events: none;
+}
+.hz-lbl.small { font-size: 1.7px; }
+.hz-detail { min-height: 44px; margin-top: 10px; font-size: 13px; }
+.hz-detail p { margin: 0; }
+.hz-hint { color: var(--muted); text-align: center; padding-top: 12px; }
+.hz-d-name { font-weight: 700; }
+.hz-d-nums { margin-top: 2px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.hz-d-nums b { color: var(--ink); font-size: 15px; }
+.hz-sub { color: var(--muted); }
+.hz-diff { font-weight: 700; }
+.hz-diff.hot { color: rgb(var(--hz-hot-rgb)); }
+.hz-diff.cold { color: rgb(var(--hz-cold-rgb)); }
+.hz-total { font-size: 12px; color: var(--ink-2); margin: 8px 0 0; font-variant-numeric: tabular-nums; }
+.hz-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--ink-2); margin: 0 0 4px; }
+.hz-k { display: inline-block; width: 11px; height: 11px; vertical-align: -1px; border-radius: 2px; margin-right: 1px; }
+.hz-legend span .hz-k:last-of-type { margin-right: 5px; }
+.hz-k.n { background: var(--hz-avg); }
+.hz-k.h1 { background: rgba(var(--hz-hot-rgb), .32); }
+.hz-k.h2 { background: rgba(var(--hz-hot-rgb), .6); }
+.hz-k.h3 { background: rgba(var(--hz-hot-rgb), .9); }
+.hz-k.c1 { background: rgba(var(--hz-cold-rgb), .32); }
+.hz-k.c2 { background: rgba(var(--hz-cold-rgb), .6); }
+.hz-k.c3 { background: rgba(var(--hz-cold-rgb), .9); }
+.hz-k.few { background: repeating-linear-gradient(45deg, var(--surface-2) 0 2px, var(--axis) 2px 3px); }
+.hz .skeleton div { height: 260px; background: var(--surface-2); }
 .tp-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--ink-2); margin: 10px 0 0; }
 .tp-legend i { display: inline-block; border-radius: 50%; vertical-align: -1px; margin-right: 4px; }
 /* with a career column (3P% page): season % over 3PM/3PA, then career % */

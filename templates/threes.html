@@ -4,7 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
   <title>NBAViz 3P%</title>
-  <meta name="description" content="Season 3-point shooting for every roster, with no scores, records, ratings or odds"/>
+  <meta name="description" content="Season 3-point shooting and hot zones for every roster, with no scores, records, ratings or odds"/>
   <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)"/>
   <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)"/>
   <link rel="manifest" href="{{ url_for('static', filename='manifest-threes.json') }}"/>
@@ -55,8 +55,18 @@
     </a>
   </nav>
 
+  <div id="sheet-backdrop" class="sheet-backdrop" hidden></div>
+  <section id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
+    <div class="sheet-grip" aria-hidden="true"><span></span></div>
+    <button class="sheet-close" aria-label="Close">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <div id="sheet-body" class="sheet-body"></div>
+  </section>
+
   <script src="{{ url_for('static', filename='gate.js') }}?v={{ v }}"></script>
   <script src="{{ url_for('static', filename='tpchart.js') }}?v={{ v }}"></script>
+  <script src="{{ url_for('static', filename='hotspot.js') }}?v={{ v }}"></script>
   <script src="{{ url_for('static', filename='threes.js') }}?v={{ v }}"></script>
 </body>
 </html>

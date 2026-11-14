@@ -18,7 +18,8 @@ Only one process runs the scheduler (file lock), even if the app is started twic
 Every page load asks: live data, everything only up to a saved game day, or
 demo data (static/gate.js). The data endpoints take the answer as ?date=YYYY-MM-DD
 (served from data/snapshots/) or ?demo=1; no parameter means live. Page URLs
-with ?live=1, ?date=... or ?demo=1 skip the question.
+with ?live=1, ?date=... or ?demo=1 skip the question. /api/shots (hot zones)
+answers "up to a date" by counting only cached games through that day.
 Set NBAVIZ_NO_REFRESH=1 to serve the existing files without refreshing.
 """
 
@@ -33,9 +34,11 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, abort, jsonify, render_template, request, send_from_directory
 
 import scrape
+import shots
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEMO_FILE = os.path.join(scrape.DATA_DIR, 'demo.json')
+DEMO_SHOTS = os.path.join(scrape.DATA_DIR, 'demo_shots.json')
 LOCK_FILE = os.path.join(scrape.DATA_DIR, '.refresh.lock')
 REFRESH_AT = os.environ.get('NBAVIZ_REFRESH_AT', '08:00')
 RETRY_MINUTES = 30
@@ -158,13 +161,14 @@ def index():
 
 def _asset_version():
     return int(max(os.path.getmtime(os.path.join(BASE_DIR, 'static', f))
-                   for f in ('app.js', 'app.css', 'tpchart.js', 'threes.js', 'gate.js')))
+                   for f in ('app.js', 'app.css', 'tpchart.js', 'threes.js', 'gate.js', 'hotspot.js')))
 
 
 @app.route('/threes')
 def threes_page():
-    """Stand-alone 3-point page. It loads /api/threes only, which carries no
-    records, ratings, standings or odds, so it is safe to open mid-game."""
+    """Stand-alone 3-point page. It loads /api/threes and, for a tapped player's
+    hot zones, /api/shots; neither carries scores, records, ratings, standings
+    or odds, so it is safe to open mid-game."""
     return render_template('threes.html', v=_asset_version())
 
 
@@ -339,7 +343,7 @@ def api_threes():
         teams.append({
             'abbr': t['abbr'], 'name': t['name'], 'nick': t.get('nick'),
             'tp': t.get('tp'), 'tpa_g': t.get('tpa_g'),
-            'players': [_with_career({'name': p['name'], 'short': p.get('short'), 'pos': p.get('pos'),
+            'players': [_with_career({'id': pid, 'name': p['name'], 'short': p.get('short'), 'pos': p.get('pos'),
                                       'tpm': p['tpm'], 'tpa': p['tpa']}, pid, p, base) for pid, p in roster],
         })
     if mode == 'demo':
@@ -355,6 +359,53 @@ def api_threes():
         'season': d.get('season'), 'generated': d.get('generated'), 'through': d.get('through'),
         'league_tp': (d.get('league') or {}).get('tp'),
         'games_date': games_date, 'games': games, 'teams': teams,
+    })
+
+
+def _demo_shots():
+    if not os.path.exists(DEMO_SHOTS):
+        import demo
+        demo.write_shots()
+    return _load_json(DEMO_SHOTS)
+
+
+@app.route('/api/shots')
+def api_shots():
+    """Hot zones of one player for the 3-point page: made/attempted in 14 court
+    zones this season and over the career (this season plus up to
+    shots.CAREER_SEASONS earlier ones), each next to the league's numbers.
+    Like /api/threes it never carries scores, records, ratings, standings or
+    odds, and "up to a date" only counts games through that day."""
+    pid = request.args.get('player', '')
+    if not re.fullmatch(r'\d{1,12}', pid):
+        raise ApiError(404, 'Unknown player.')
+    d, mode, day = _source()
+    p = (d.get('players') or {}).get(pid)
+    if not p:
+        raise ApiError(404, 'Unknown player.')
+    if mode == 'demo':
+        demo_z = _demo_shots() or {}
+        z = (demo_z.get('players') or {}).get(pid)
+        if not z:
+            raise ApiError(404, 'Unknown player.')
+        lg = demo_z['league']
+        zones = {
+            'season': {'label': d.get('season'), 'zones': z['season'], 'league': lg['season']},
+            'career': {'zones': z['career'], 'league': lg['career'], 'seasons': z['seasons'],
+                       'past': len(z['seasons']) - 1, 'complete': True, 'max_past': shots.CAREER_SEASONS},
+        }
+    else:
+        try:
+            end_year = int(str(d.get('season'))[:4]) + 1
+        except ValueError:
+            raise ApiError(503, 'The data has no season yet.')
+        zones = shots.player_zones(end_year, pid, day if mode == 'date' else d.get('through'), _load_json)
+        if zones is None:
+            raise ApiError(503, 'Shot locations are still being collected; they arrive with the next refresh.')
+    return jsonify({
+        'demo': mode == 'demo', 'mode': mode, 'asof': day,
+        'player': {'id': pid, 'name': p['name'], 'short': p.get('short'), 'team': p.get('team'), 'pos': p.get('pos')},
+        **zones,
     })
 
 

@@ -10,8 +10,8 @@ every visit starts by asking whether you want **live data or everything only up 
 can catch up on games without being spoiled.
 
 Flask + vanilla JavaScript + hand-written SVG. No build step, no front-end dependencies,
-no database. One refresh a day of about 20 polite requests (a few more on mornings when ESPN
-is slow to update its season totals).
+no database. One refresh a day of about 20 polite requests, plus one per finished game for the shot
+locations behind the hot zones (a few more on mornings when ESPN is slow to update its season totals).
 
 <p align="center">
   <img src="docs/screenshots/start.png" width="200" alt="Start screen: live, up to a date, or demo">
@@ -61,7 +61,11 @@ is slow to update its season totals).
   each player's season 3P% next to their career 3P% (shaded green or red when this season is above or
   below it), best shooters first, on a scale zoomed to where most shooters are. See
   [The 3P% page](#the-3p-page). The page loads its own minimal JSON, so it never receives
-  scores, records, ratings, standings or odds. It asks the same live / up-to-a-date question, has the
+  scores, records, ratings, standings or odds.
+- **Hot zones.** Tap any player on the 3P% page for an NBA 2K-style hot-zone chart: a half court in
+  14 zones, red where they shoot better than the league from there, blue where worse, with a
+  *Season* / *Career* switch. Tap a zone for its FG%, makes and attempts, the league's FG% there and the
+  share of the player's shots. See [Hot zones](#hot-zones). It asks the same live / up-to-a-date question, has the
   same bottom tab bar as the dashboard, and can be installed on its own home-screen icon.
 - **Season leaders.** Points, rebounds, assists, 3-pointers made, steals, blocks and true shooting:
   a top-5 card per stat plus a beeswarm of every qualified player, so you can see how far ahead the leader is.
@@ -217,6 +221,50 @@ The same key is in the app: tap *How to read this* under the diamond.
 - The scale is zoomed to the league average ± 7 points (about 29–43%), where nearly every career mark
   and most season numbers sit. Anyone further out is drawn as a small arrow at the edge; the numbers on
   the right are always exact. Both teams on the page share the scale.
+- Tap a player (or a name in the "No threes attempted" line) to open their hot zones.
+
+### Hot zones
+
+<p align="center">
+  <img src="docs/screenshots/hotspots.png" width="200" alt="Hot-zone chart: half court in 14 zones, career view, one zone tapped">
+</p>
+
+- The court is split into 14 zones as in NBA 2K: the restricted area, three short-range zones (left,
+  middle, right, 5–14 ft), five mid-range zones (both baselines, both wings, the top) and five 3-point
+  zones (both corners, both wings, the top of the key). Left and right are as a shooter facing the
+  basket sees them, the same as the NBA's zone names (*Left Corner 3* and so on).
+- Each zone is coloured by the player's field-goal percentage there against the **league's in the same
+  zone**: red is better (hot), blue is worse (cold), grey is within 3 points. Darker means a bigger gap
+  (3, 6 and 10+ points). Zones with fewer than 10 attempts are hatched instead of coloured.
+- Tap a zone (or focus it and press Enter) for its FG%, makes and attempts, the league's FG% there, the
+  difference, and the share of the player's shots taken from there.
+- **Season** counts this season's regular-season games. **Career** adds up to the last 5 earlier regular
+  seasons (unlike the career 3P% column, which counts every season); its league average covers the same
+  seasons. For a first-year player both views are the same.
+- *Up to a date* counts only games through that day, like everything else.
+- Locations come from ESPN play-by-play, so a zone's numbers can differ by a shot or two from the season
+  totals. Heaves from beyond 35 feet are left out. Locations are whole feet.
+
+How reliable it is (checked on 2026-11-14):
+
+- **Against ESPN's official season totals**, for all 465 players: makes match exactly. With shots beyond
+  35 ft left out, 429 players match their official attempts and 3-point attempts exactly, and the rest are off
+  by 1–2. The difference is end-of-quarter heaves: play-by-play lists them, the official totals don't count
+  them (in 28 re-checked games, every extra attempt was a miss in the last 3 seconds of a period, mostly from
+  38–81 ft).
+- **Against the NBA's own shot data** (1,405 shots from 8 games in 2025-26, matched by player, period and
+  clock): the side agrees for 668 of 668 shots the NBA labels left or right, all 159 corner threes land in the
+  right corner tile, 2 or 3 agrees for all 1,405, and distances agree within about half a foot.
+
+How the data is collected: each refresh fetches the play-by-play of every newly finished game once (one
+request each) and keeps only the shot itself (shooter, x/y, made, 2 or 3), never scores. The earlier
+seasons for *Career* are fetched one per day after the morning refresh, newest first (about 1,230 games
+and 25 minutes each), so career zones fill in over the first five days; until then the career view says
+it is still filling in. `python3 scrape.py --shots-fill` fetches every missing season at once.
+
+ESPN marks a shot as a 2 or a 3 reliably from 2022-23 on. For older games, a made shot uses its points,
+and a miss uses the play text or its distance (24+ ft, or a corner shot beyond 22 ft). Checked against
+box scores, that misses about 1 three in 1,000 in 2021-22.
 
 ## How the ratings are computed
 
@@ -278,7 +326,9 @@ Open `http://localhost:5003` and pick *Live*, *Up to a date* or *Demo*. On the f
 fetches the season so far (about one to two minutes); until then the page says the first refresh is
 still running and checks again by itself. *Demo* works straight away (team logos appear once the first
 refresh has downloaded them). The first snapshot for *Up to a date* is saved by the first refresh that
-runs after a complete game night.
+runs after a complete game night. After the dashboard is written, the first refresh also fetches the
+shot locations of every game played so far (one request per game, a few minutes) and one earlier season
+for the career hot zones (about 25 minutes); the dashboard works while that runs.
 
 Adding `?live=1`, `?date=YYYY-MM-DD` or `?demo=1` to a URL skips the start screen, which is handy for
 bookmarks.
@@ -286,9 +336,10 @@ bookmarks.
 You can also refresh by hand:
 
 ```bash
-python3 scrape.py            # fetch and rebuild data/dashboard.json
-python3 scrape.py --offline  # rebuild from the cache, no network
-python3 demo.py              # regenerate the demo data
+python3 scrape.py               # fetch and rebuild data/dashboard.json
+python3 scrape.py --offline     # rebuild from the cache, no network (also recounts the hot zones)
+python3 scrape.py --shots-fill  # fetch every missing earlier season for the career hot zones now
+python3 demo.py                 # regenerate the demo data
 ```
 
 ### Configuration
@@ -308,6 +359,8 @@ A background thread in the app refreshes once a day at `NBAVIZ_REFRESH_AT`:
 - after a restart it refreshes straight away if the data is older than the latest scheduled time.
   A restart does not resume the hourly catch-up, though: if the app is restarted on a morning when the
   totals still lagged, it waits for the next day's run, so run `python3 scrape.py` by hand.
+- until the last 5 earlier seasons' shot locations are cached, the morning refresh also fetches one of
+  them at the end, which keeps it busy for about 25 more minutes (the data it serves is already updated).
 
 A file lock makes sure only one process runs the schedule. `GET /api/status` shows the next run and the last result.
 
@@ -345,6 +398,7 @@ WantedBy=multi-user.target
 | `/api/dates` | Saved days you can pick (newest first), when each was saved, and how far live data goes |
 | `/api/dashboard` | Everything the dashboard shows, as JSON (`?date=` or `?demo=1` as above) |
 | `/api/threes` | Rosters with 3PM/3PA (season and career), team 3P% and matchups (today's, or the day after `?date=`). No results of any kind |
+| `/api/shots?player=<id>` | One player's hot zones: made/attempted in 14 zones, season and career, with the league's numbers (`?date=` or `?demo=1` as above). No results of any kind |
 | `/api/status` | Refresh schedule status |
 | `/img/logos/…`, `/img/heads/…` | Cached team logos and player headshots |
 
@@ -356,6 +410,8 @@ WantedBy=multi-user.target
 | Results, to know who played whom | ESPN scoreboard, one per day; finished days are cached forever | 1–2 |
 | Player per-game stats | ESPN `statistics/byathlete` (all players and qualified players) | 2 |
 | Past seasons' 3PM/3PA, for career 3P% | ESPN `statistics/byathlete` per earlier season, cached forever | 0 (about 20 once) |
+| Shot locations, for the hot zones | ESPN game `summary` (play-by-play), once per finished game, cached forever | ~10 (one per new game) |
+| Earlier seasons' shot locations, for career hot zones | ESPN scoreboard per month, then every game's `summary` | ~1,240, one season per day until the last 5 are cached |
 | Championship and MVP odds, price history | Polymarket Gamma and CLOB APIs (read-only) | ~14 |
 | Logos and headshots | ESPN's image CDN, downloaded once into `data/img/` | 0 after the first run |
 
@@ -373,6 +429,7 @@ the trend for candidates that have since left the top six.
 ```
 app.py              Flask app, daily refresh schedule, JSON endpoints
 scrape.py           fetching and caching (ESPN, Polymarket, images)
+shots.py            shot locations from ESPN play-by-play, hot-zone shapes and tallies
 model.py            possessions, ratings, opponent adjustment, leaders, odds matching
 demo.py             spoiler-free demo data
 templates/          index.html (dashboard), threes.html (3P% page)
@@ -380,9 +437,11 @@ static/app.js       dashboard: diamond, ladder, leaders, odds, sheets
 static/threes.js    spoiler-free 3P% page
 static/gate.js      start screen: live, up to a date, or demo (shared by both pages)
 static/tpchart.js   the 3P% chart shared by both pages
+static/hotspot.js   the hot-zone chart (3P% page player sheet)
 static/app.css      styles, light and dark
 static/sw.js        service worker (network first, offline fallback)
-data/               generated, git-ignored: dashboard.json, snapshots/, caches, images
+data/               generated, git-ignored except snapshots/: dashboard.json, demo.json,
+                    demo_shots.json, snapshots/, caches (cache/shots/ = shot locations), images
 ```
 
 ## Disclaimer

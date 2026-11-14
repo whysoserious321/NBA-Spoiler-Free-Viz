@@ -1,11 +1,15 @@
 /* Spoiler-free 3-point page. It only ever loads /api/threes, which holds
-   rosters with 3PM/3PA and team 3P% - no scores, records, ratings or odds -
-   so it is safe to open while watching a game. */
+   rosters with 3PM/3PA and team 3P%, and /api/shots, a tapped player's hot
+   zones - no scores, records, ratings or odds - so it is safe to open while
+   watching a game. */
 (function () {
   'use strict';
 
   var main = document.getElementById('main');
   var pill = document.getElementById('mode-pill');
+  var sheet = document.getElementById('sheet');
+  var sheetBody = document.getElementById('sheet-body');
+  var backdrop = document.getElementById('sheet-backdrop');
   var D = null, sel = [], choice = null;
 
   var store = {
@@ -51,6 +55,7 @@
 
   // Live, up to a saved date, or demo: chosen on the start screen (shared with the dashboard).
   function start(c) {
+    closeSheet();
     choice = c;
     // Bottom bar: dashboard tabs open with the same data choice, like the "Full dashboard" link.
     Array.prototype.forEach.call(document.querySelectorAll('.tabbar a'), function (a) {
@@ -113,7 +118,7 @@
       '<details class="help"><summary><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/>' +
       '<path d="M8 7.2v4M8 4.6v.1"/></svg>How to read this</summary><div class="help-body"><p class="foot">' +
       'Spoiler-free: only 3-point shooting lives on this page, with no scores, records, ratings or odds. ' +
-      'Tap a game or up to two logos to compare their players.</p></div></details></section>';
+      'Tap a game or up to two logos to compare their players, and a player for their hot zones.</p></div></details></section>';
 
     if (!sel.length) {
       html += '<section class="card empty"><p>Tap a logo, or a game above, to see every player’s 3P%.</p></section>';
@@ -123,7 +128,7 @@
       var t = team(abbr);
       html += '<section class="card tp-card" id="tp-' + abbr + '"><div class="sh-top" style="margin:0 0 10px">' + logo(abbr) +
         '<div><h3>' + esc(t.name) + '</h3></div></div>' +
-        window.tpChart(t, t.players, D.league_tp, { heading: false, sort: 'pct', domain: dom }) + '</section>';
+        window.tpChart(t, t.players, D.league_tp, { heading: false, sort: 'pct', domain: dom, interactive: true }) + '</section>';
     });
     html += '<p class="credit">' + (choice.mode === 'demo' ? 'Demo data: every number and player here is made up.'
       : choice.mode === 'date' ? 'Season totals as of the refresh on ' + (NBAGate.stamp(D.generated) ? NBAGate.stamp(D.generated) + ' (' + NBAGate.zone() + '), ' : '') +
@@ -140,9 +145,154 @@
     }
   }
 
+  /* ------------------------------------------------- hot zones in a sheet */
+  // Same look and gestures as the dashboard's sheet (app.js): backdrop, close button,
+  // Escape, drag the grip down, and the browser's back button closes it.
+
+  var sheetOpen = false, lastFocus = null, backPending = false, backTimer = null, afterBack = null;
+  var hz = { pid: null, data: null, sel: null, seq: 0, view: store.get('nbaviz-hz-view') === 'career' ? 'career' : 'season' };
+  var shotCache = {};
+
+  function openSheet(html) {
+    sheetBody.innerHTML = html;
+    sheetBody.scrollTop = 0;
+    if (!sheetOpen) {
+      sheetOpen = true;
+      lastFocus = document.activeElement;
+      sheet.hidden = false;
+      backdrop.hidden = false;
+      document.body.classList.add('sheet-open');
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { sheet.classList.add('on'); backdrop.classList.add('on'); });
+      });
+      try { history.pushState({ sheet: 1 }, ''); } catch (e) { /* ignore */ }
+    }
+    sheet.querySelector('.sheet-close').focus({ preventScroll: true });
+  }
+  function closeSheet(fromPop) {
+    if (!sheetOpen) return;
+    sheetOpen = false;
+    hz.seq++;                                         // drop an answer still on its way
+    sheet.classList.remove('on');
+    backdrop.classList.remove('on');
+    sheet.style.transform = '';
+    document.body.classList.remove('sheet-open');
+    setTimeout(function () { if (!sheetOpen) { sheet.hidden = true; backdrop.hidden = true; } }, 330);
+    if (lastFocus && lastFocus.focus) lastFocus.focus({ preventScroll: true });
+    if (!fromPop && history.state && history.state.sheet) {
+      // history.back() lands later; a player tapped meanwhile opens once it has
+      backPending = true;
+      clearTimeout(backTimer);
+      backTimer = setTimeout(finishBack, 3000);
+      history.back();
+    }
+  }
+  function finishBack() {
+    backPending = false;
+    clearTimeout(backTimer);
+    var f = afterBack;
+    afterBack = null;
+    if (f) f();
+  }
+  window.addEventListener('popstate', function () {
+    if (backPending) finishBack();
+    else if (sheetOpen) closeSheet(true);
+  });
+  backdrop.addEventListener('click', function () { closeSheet(); });
+  sheet.querySelector('.sheet-close').addEventListener('click', function () { closeSheet(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !document.querySelector('.gate')) closeSheet(); });
+  (function () {
+    var grip = sheet.querySelector('.sheet-grip'), y0 = null, dy = 0;
+    grip.addEventListener('pointerdown', function (e) {
+      y0 = e.clientY; dy = 0; sheet.classList.add('dragging');
+      try { grip.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    });
+    grip.addEventListener('pointermove', function (e) {
+      if (y0 == null) return;
+      dy = Math.max(0, e.clientY - y0);
+      sheet.style.transform = 'translateY(' + dy + 'px)';
+    });
+    function end() {
+      if (y0 == null) return;
+      y0 = null; sheet.classList.remove('dragging');
+      if (dy > 90) closeSheet(); else sheet.style.transform = '';
+    }
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+  })();
+
+  function findPlayer(pid) {
+    for (var i = 0; i < D.teams.length; i++) {
+      for (var j = 0; j < D.teams[i].players.length; j++) {
+        if (D.teams[i].players[j].id === pid) return { p: D.teams[i].players[j], t: D.teams[i] };
+      }
+    }
+    return null;
+  }
+
+  function openPlayer(pid) {
+    if (backPending) { afterBack = function () { openPlayer(pid); }; return; }
+    var hit = findPlayer(pid);
+    if (!hit) return;
+    hz.pid = pid;
+    hz.sel = null;
+    hz.data = null;
+    var seq = ++hz.seq;
+    openSheet('<div class="sh-top">' + logo(hit.t.abbr) + '<div><p class="kicker">Hot zones</p><h3 id="sheet-title">' +
+      esc(hit.p.name) + '</h3><p>' + esc(hit.t.name) + (hit.p.pos ? ' · ' + esc(hit.p.pos) : '') + '</p></div></div>' +
+      '<div class="hz" id="hz"><div class="skeleton" aria-hidden="true"><div></div></div></div>');
+    var q = NBAGate.query(choice), key = pid + q;
+    var got = shotCache[key] ? Promise.resolve(shotCache[key]) :
+      fetch('/api/shots' + (q ? q + '&' : '?') + 'player=' + encodeURIComponent(pid), { cache: 'no-cache' })
+        .then(function (r) {
+          return r.json().catch(function () { throw new Error('The server answered with HTTP ' + r.status + '.'); })
+            .then(function (j) { if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status); return j; });
+        });
+    got.then(function (d) {
+      shotCache[key] = d;
+      if (seq !== hz.seq || !sheetOpen) return;
+      hz.data = d;
+      drawHz();
+    }).catch(function (e) {
+      if (seq !== hz.seq || !sheetOpen) return;
+      document.getElementById('hz').innerHTML = '<div class="error"><p><b>Couldn’t load the hot zones.</b></p><p>' + esc(e.message) + '</p></div>';
+    });
+  }
+
+  function drawHz(focus) {
+    var box = document.getElementById('hz');
+    if (!box || !hz.data) return;
+    box.innerHTML = window.hotspot.render(hz.data, hz);
+    var el = focus && box.querySelector(focus);
+    if (el) el.focus({ preventScroll: true });
+  }
+
+  function hzAct(t) {
+    var view = t.closest('[data-hz-view]'), zone = t.closest('[data-zone]');
+    if (view) {
+      hz.view = view.getAttribute('data-hz-view');
+      store.set('nbaviz-hz-view', hz.view);
+      drawHz('[data-hz-view="' + hz.view + '"]');
+    } else if (zone) {
+      var z = +zone.getAttribute('data-zone');
+      hz.sel = hz.sel === z ? null : z;
+      drawHz('[data-zone="' + z + '"]');
+    }
+  }
+  sheetBody.addEventListener('click', function (e) { hzAct(e.target); });
+  sheetBody.addEventListener('keydown', function (e) {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('[data-zone]')) {
+      e.preventDefault();
+      hzAct(e.target);
+    }
+  });
+
   main.addEventListener('click', function (e) {
     var pick = e.target.closest('.tpick'), game = e.target.closest('[data-game]'), act = e.target.closest('[data-act]');
-    if (pick) {
+    var player = e.target.closest('[data-player]');
+    if (player) {
+      openPlayer(player.getAttribute('data-player'));
+    } else if (pick) {
       var a = pick.getAttribute('data-abbr'), i = sel.indexOf(a);
       if (i >= 0) sel.splice(i, 1);
       else { sel.push(a); if (sel.length > 2) sel.shift(); }

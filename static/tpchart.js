@@ -16,7 +16,7 @@
    * players: [{ id, name, short, tpm, tpa, ctpm?, ctpa?, first? }]  in display order;
    *          ctpm/ctpa = career totals (this season included), first = first season
    * lgp:     league 3P%
-   * opts:    { interactive: rows are buttons with data-player, heading: show the section title,
+   * opts:    { interactive: rows (and the no-threes names) are buttons with data-player, heading: show the section title,
    *            sort: 'pct' = by 3P%, highest first, players under SMALL attempts last,
    *            domain: [lo, hi] = the 3P% range to draw (default 0-70); values outside it are
    *            drawn as a small arrow at the edge }
@@ -81,7 +81,11 @@
         '</' + tag + '>';
     }).join('');
     if (none.length) {
-      html += '<p class="tp-none">No threes attempted: ' + none.map(function (p) { return esc(p.short || p.name); }).join(', ') + '.</p>';
+      html += '<p class="tp-none">No threes attempted: ' + none.map(function (p) {
+        return opts.interactive
+          ? '<button type="button" class="tp-none-p" data-player="' + esc(p.id) + '">' + esc(p.short || p.name) + '</button>'
+          : esc(p.short || p.name);
+      }).join(', ') + '.</p>';
     }
     html +=
       '<details class="help" data-help="tp"><summary><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/>' +

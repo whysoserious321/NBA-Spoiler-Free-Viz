@@ -5,7 +5,7 @@ except for the 'demo' flag (which shows a 'Demo data' badge). Real team names
 and logos are kept so the page looks like the real thing; every number and
 every player is invented.
 
-    python3 demo.py      # writes data/demo.json
+    python3 demo.py      # writes data/demo.json and data/demo_shots.json (hot zones)
 """
 
 import math
@@ -226,10 +226,111 @@ def build(seed=11):
     }
 
 
+def _split(total, weights):
+    """total split over weights in whole numbers that add up exactly (largest remainder)."""
+    s = sum(weights) or 1.0
+    raw = [total * w / s for w in weights]
+    out = [int(r) for r in raw]
+    for i in sorted(range(len(raw)), key=lambda i: -(raw[i] - out[i]))[:total - sum(out)]:
+        out[i] += 1
+    return out
+
+
+def _deal(rng, made, atts, pcts):
+    """Exactly `made` makes over zones with these attempts, never more than a zone's attempts."""
+    m = [0] * len(atts)
+    for _ in range(min(made, sum(atts))):
+        w = [(a - k) * p for a, k, p in zip(atts, m, pcts)]
+        r, pick = rng.random() * sum(w), None
+        for i, wi in enumerate(w):
+            if wi > 0:
+                pick = i
+                r -= wi
+                if r < 0:
+                    break
+        m[pick] += 1
+    return m
+
+
+def _binom(rng, n, p):
+    if n < 60:
+        return sum(1 for _ in range(n) if rng.random() < p)
+    sd = math.sqrt(n * p * (1 - p))
+    return int(max(0, min(n, round(rng.gauss(n * p, sd)))))
+
+
+# Made-up shot profile: share of 2-point attempts per zone 0-8 and of threes per zone 9-13
+# (see shots.py for the zones), and league-ish FG% in the 2-point zones.
+TWO_W = [0.36, 0.06, 0.09, 0.06, 0.035, 0.06, 0.06, 0.06, 0.035]
+TWO_PCT = [0.66, 0.43, 0.45, 0.43, 0.41, 0.42, 0.43, 0.42, 0.41]
+THREE_W = [0.15, 0.24, 0.22, 0.24, 0.15]
+POS_TWO = {'C': (1.9, 1.2, 0.4), 'F': (1.0, 1.0, 1.0), 'G': (0.75, 0.9, 1.35)}   # rim, short, mid
+POS_THREE = {'C': (1.2, 1.0), 'F': (1.4, 1.0), 'G': (1.0, 1.2)}                    # corners, top
+
+
+def hot_zones(dash, seed=11):
+    """Invented hot zones for every demo player (data/demo_shots.json): the 3-point
+    zones add up exactly to the player's 3PM/3PA (season) and career 3PM/3PA, so the
+    hot-zone chart agrees with the 3P% chart. Own random stream: nothing else changes."""
+    rng = random.Random(seed + 2000)
+    end_year = int(dash['season'][:4]) + 1
+    players = {}
+    lg_season, lg_career = [[0, 0] for _ in range(14)], [[0, 0] for _ in range(14)]
+
+    def profile(p):
+        rim, short, mid = POS_TWO.get(p['pos'], POS_TWO['F'])
+        corner, top = POS_THREE.get(p['pos'], POS_THREE['F'])
+        lean = rng.uniform(0.8, 1.2)                         # a favourite side
+        side = [1, lean, 1, 2 - lean, lean, lean, 1, 2 - lean, 2 - lean]
+        two = [w * m * s * rng.uniform(0.55, 1.45) for w, m, s in
+               zip(TWO_W, [rim, short, short, short, mid, mid, mid, mid, mid], side)]
+        three = [w * m * s * rng.uniform(0.55, 1.45) for w, m, s in
+                 zip(THREE_W, [corner, 1, top, 1, corner], [lean, lean, 1, 2 - lean, 2 - lean])]
+        skill = rng.gauss(0, 0.03)
+        two_pct = [min(0.8, max(0.2, q + skill + rng.gauss(0, 0.05))) for q in TWO_PCT]
+        tp = p['tpm'] / p['tpa'] if p['tpa'] else 0.35
+        three_pct = [max(0.05, tp + b + rng.gauss(0, 0.04)) for b in (0.03, 0, 0, 0, 0.03)]
+        return two, three, two_pct, three_pct
+
+    def zones(two_a, tpa, tpm, prof):
+        two, three, two_pct, three_pct = prof
+        a2 = _split(two_a, two)
+        a3 = _split(tpa, three)
+        m3 = _deal(rng, tpm, a3, three_pct)
+        return [[_binom(rng, a, q), a] for a, q in zip(a2, two_pct)] + [[m, a] for m, a in zip(m3, a3)]
+
+    for pid in sorted(dash['players']):
+        p = dash['players'][pid]
+        prof = profile(p)
+        two_a = max(0, int(round(p['fga_g'] * p['gp'])) - p['tpa'])
+        season = zones(two_a, p['tpa'], p['tpm'], prof)
+        if p.get('first') or 'ctpa' not in p:
+            career, n_past = [list(z) for z in season], 0
+        else:
+            past3a, past3m = p['ctpa'] - p['tpa'], p['ctpm'] - p['tpm']
+            ratio = two_a / p['tpa'] if p['tpa'] >= 5 else {'C': 6.0, 'F': 1.6, 'G': 1.1}.get(p['pos'], 1.6)
+            past = zones(int(round(past3a * ratio)), past3a, past3m, prof)
+            career = [[a[0] + b[0], a[1] + b[1]] for a, b in zip(season, past)]
+            n_past = rng.randint(1, 5)
+        for acc, zs in ((lg_season, season), (lg_career, career)):
+            for i, (m, a) in enumerate(zs):
+                acc[i][0] += m
+                acc[i][1] += a
+        players[pid] = {'season': season, 'career': career,
+                        'seasons': [scrape.season_label(y) for y in range(end_year - n_past, end_year + 1)]}
+    return {'demo': True, 'league': {'season': lg_season, 'career': lg_career}, 'players': players}
+
+
 def write():
-    scrape.write_json(os.path.join(scrape.DATA_DIR, 'demo.json'), build())
+    dash = build()
+    scrape.write_json(os.path.join(scrape.DATA_DIR, 'demo.json'), dash)
+    scrape.write_json(os.path.join(scrape.DATA_DIR, 'demo_shots.json'), hot_zones(dash))
+
+
+def write_shots():
+    scrape.write_json(os.path.join(scrape.DATA_DIR, 'demo_shots.json'), hot_zones(build()))
 
 
 if __name__ == '__main__':
     write()
-    print('wrote data/demo.json')
+    print('wrote data/demo.json and data/demo_shots.json')

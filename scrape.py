@@ -13,6 +13,9 @@ data/dashboard.json for the web app:
         the team 3P% chart, qualified players for the leaderboards)
       - the same player stats for each earlier season, once per season and
         cached forever (data/cache/career/), for the career 3P% on /threes
+      - the play-by-play of every final game, once per game, reduced to shot
+        locations for the hot zones on /threes (shots.py; about 10 requests a
+        day, plus one earlier season per day until the last 5 are cached)
   * Polymarket (Gamma + CLOB, read-only): championship and MVP markets plus
     their price history.
 
@@ -22,15 +25,20 @@ this IP, so neither is used. The raw and opponent-adjusted ratings that
 Basketball-Reference publishes are computed here instead (see model.py).
 
 A normal refresh makes about 20 requests (most of them Polymarket price
-history); the first run of a season also fetches each past scoreboard once.
+history) plus one per newly finished game for its shot locations; the first
+run of a season also fetches each past scoreboard and game once. Until the
+last 5 earlier seasons' shots are cached, each day's refresh also fetches one
+of them (about 1,230 requests, 25 minutes).
 
 After a complete game night the refresh also saves a snapshot of the whole
 dashboard for that day (data/snapshots/YYYY-MM-DD.json.gz, ~37 KB), which is
 what the "up to a date" choice serves, and merges the odds price histories
 into data/cache/odds_history.json.
 
-Run by hand:   python3 scrape.py            (refresh everything)
-               python3 scrape.py --offline  (rebuild from cache, no requests)
+Run by hand:   python3 scrape.py              (refresh everything)
+               python3 scrape.py --offline    (rebuild from cache, no requests)
+               python3 scrape.py --shots-fill (fetch every missing earlier season's
+                                               shots for the career hot zones now)
 The Flask app also calls refresh() on a background timer.
 """
 
@@ -562,12 +570,29 @@ def refresh(offline=False, log=print):
             update_career(f, end_year, [p['id'] for p in season.get('players') or []], log=log)
         except Exception as e:
             log(f'career 3P% update failed (keeping the previous one): {type(e).__name__}: {e}')
+    # shot locations for the hot zones, also after the dashboard so they can never break it
+    import shots
+    try:
+        shots.update_season(None if offline else f, games, end_year, log=log)
+    except Exception as e:
+        log(f'shot locations update failed (keeping the previous ones): {type(e).__name__}: {e}')
+    try:
+        if offline:
+            shots.rebuild_past(log=log)
+        else:
+            shots.fill_past(f, end_year, log=log)
+    except Exception as e:
+        log(f'earlier-season shots stopped: {type(e).__name__}: {e}')
     log(f'wrote dashboard.json: {len(games)} games, {f.count} requests, {time.time() - t0:.1f}s')
     return dash
 
 
 if __name__ == '__main__':
     try:
+        if '--shots-fill' in sys.argv:
+            import shots
+            shots.fill_past(Fetcher(), season_end_year(), everything=True)
+            sys.exit(0)
         refresh(offline='--offline' in sys.argv)
     except RateLimited as e:
         print(f'Stopped: rate limited (429) on {e}. Try again later.', file=sys.stderr)
