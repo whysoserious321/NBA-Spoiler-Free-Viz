@@ -4,9 +4,10 @@ Serves one page plus the JSON that scrape.py writes. A background thread
 refreshes the data once a day at REFRESH_AT (local time, default 08:00):
 
   * a failed refresh is retried every RETRY_MINUTES until it works;
-  * if ESPN's season totals don't include last night's games yet (they can lag
-    the scoreboard by several hours), it checks again every CATCHUP_MINUTES
-    until they do, but not after CATCHUP_UNTIL o'clock;
+  * if the refresh is only partial - ESPN's season totals don't include last
+    night's games yet (they can lag the scoreboard by several hours) or not
+    every game of the night has finished - it checks again every
+    CATCHUP_MINUTES until it is full, but not after CATCHUP_UNTIL o'clock;
   * after a reboot or downtime it refreshes straight away if the data is older
     than the most recent REFRESH_AT.
 
@@ -79,16 +80,16 @@ def _next_slot(now):
 
 
 def _refresh_once():
-    """Returns 'ok', 'lagging' (ESPN totals behind the results) or 'failed'."""
+    """Returns 'ok' (a full refresh), 'partial' (scrape.partial_reason) or 'failed'."""
     status['running'] = True
     try:
         dash = scrape.refresh(log=log.info)
-        lagging = sum(1 for t in (dash or {}).get('teams', []) if t['gp'] < t['w'] + t['l'])
+        partial = scrape.snapshot_partial(dash or {})
         status['last_ok'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
         status['last_error'] = None
-        result = 'lagging' if lagging else 'ok'
-        if lagging:
-            log.info('ESPN season totals are behind the results for %d teams', lagging)
+        result = 'partial' if partial else 'ok'
+        if partial:
+            log.info('partial refresh: %s', partial)
     except Exception as e:                       # keep serving the last good data
         log.exception('refresh failed')
         status['last_error'] = f'{type(e).__name__}: {e}'
@@ -244,7 +245,7 @@ def _dated(day):
                 o['history'] = [p for p in hist.get(o['name'], []) if p[0] <= cutoff]
             outs.append(o)
         odds[key] = {**ev, 'outcomes': outs}
-    return {**snap, 'odds': odds, 'asof': day}
+    return {**snap, 'odds': odds, 'asof': day, 'partial': scrape.snapshot_partial(snap)}
 
 
 def _source():
@@ -278,33 +279,40 @@ _saved_cache = {}
 
 
 def _snapshot_saved(day):
-    """When the snapshot for `day` was saved (its refresh time, UTC ISO). Only the
-    timestamp is kept in memory, re-read when the file changes."""
+    """(when the snapshot for `day` was saved as UTC ISO, why it is partial or None).
+    Only these two are kept in memory, re-read when the file changes."""
     path = os.path.join(scrape.SNAP_DIR, f'{day}.json.gz')
     try:
         mtime = os.path.getmtime(path)
     except OSError:
-        return None
+        return None, None
     hit = _saved_cache.get(day)
     if not hit or hit[0] != mtime:
         try:
-            gen = scrape.read_snapshot(day).get('generated')
+            snap = scrape.read_snapshot(day)
+            info = (snap.get('generated'), scrape.snapshot_partial(snap))
         except (OSError, ValueError, EOFError):
-            gen = None
-        hit = (mtime, gen)
+            info = (None, None)
+        hit = (mtime, info)
         _saved_cache[day] = hit
     return hit[1]
 
 
 @app.route('/api/dates')
 def api_dates():
-    """Days you can pick in the start screen (newest first), when each was saved,
-    and how far live data goes."""
-    live = _load_json(scrape.DASHBOARD) if os.path.exists(scrape.DASHBOARD) else None
+    """Days you can pick in the start screen (newest first), when each was saved
+    and whether it is partial, and how far live data goes: its refresh time, why
+    it is partial (None = full) and when the last full refresh ran."""
+    live = (_load_json(scrape.DASHBOARD) if os.path.exists(scrape.DASHBOARD) else None) or {}
     dates = _snapshot_dates()
-    return jsonify({'dates': dates, 'saved': {d: _snapshot_saved(d) for d in dates},
-                    'live_through': (live or {}).get('through'),
-                    'live_generated': (live or {}).get('generated')})
+    info = {d: _snapshot_saved(d) for d in dates}
+    partial = scrape.snapshot_partial(live) if live else None
+    return jsonify({'dates': dates, 'saved': {d: info[d][0] for d in dates},
+                    'partial': {d: info[d][1] for d in dates},
+                    'live_through': live.get('through'),
+                    'live_generated': live.get('generated'),
+                    'live_partial': partial,
+                    'live_last_full': live.get('last_full', None if partial else live.get('generated'))})
 
 
 def _career_base(season_label):
@@ -357,6 +365,7 @@ def api_threes():
     return jsonify({
         'demo': mode == 'demo', 'mode': mode, 'asof': day,
         'season': d.get('season'), 'generated': d.get('generated'), 'through': d.get('through'),
+        'partial': None if mode == 'demo' else scrape.snapshot_partial(d),
         'league_tp': (d.get('league') or {}).get('tp'),
         'games_date': games_date, 'games': games, 'teams': teams,
     })

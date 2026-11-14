@@ -96,7 +96,8 @@
   }
 
   function render(scrollTo) {
-    var p = NBAGate.pill(choice, D.generated);
+    var p = NBAGate.pill(choice, D.generated, D.partial);
+    var partial = D.partial ? '<span class="partial-note">' + esc(NBAGate.partialNote(D.partial)) + '</span> ' : '';
     pill.textContent = p.text;
     pill.className = 'mode-pill ' + p.cls;
     pill.hidden = false;
@@ -132,9 +133,9 @@
     });
     html += '<p class="credit">' + (choice.mode === 'demo' ? 'Demo data: every number and player here is made up.'
       : choice.mode === 'date' ? 'Season totals as of the refresh on ' + (NBAGate.stamp(D.generated) ? NBAGate.stamp(D.generated) + ' (' + NBAGate.zone() + '), ' : '') +
-          'games through ' + NBAGate.day(choice.date, true) + ' (US date) only. Data: ESPN.'
+          'games through ' + NBAGate.day(choice.date, true) + ' (US date) only. ' + partial + 'Data: ESPN.'
         : esc(D.season || '') + ' season totals, updated ' + (NBAGate.stamp(D.generated) ? NBAGate.stamp(D.generated) + ' (' + relTime(D.generated) + ')' : relTime(D.generated)) +
-          ', refreshed daily. Data: ESPN.') +
+          ', refreshed daily. ' + partial + 'Data: ESPN.') +
       ' <button type="button" data-act="gate">Change</button><br>' +
       '<a href="/' + NBAGate.linkQuery(choice) + '" class="inline-link">Full dashboard ↗</a> (results, ratings and odds' +
       (choice.mode === 'date' ? ', also only up to that date)' : ')') + '</p>';

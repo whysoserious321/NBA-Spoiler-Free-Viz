@@ -456,12 +456,43 @@ def snapshot_allowed(events, through):
     half-finished day (or odds that already react to later games)."""
     if not through:
         return False, 'no finished games yet'
+    us = lambda d: datetime.strptime(d, '%Y-%m-%d').strftime('%b %-d') + ' (US date)'
     for e in events:
         if e['date'] == through and not (e.get('final') or e.get('state') == 'post'):
-            return False, f'not every game on {through} is finished'
+            return False, f'not every game on {us(through)} has finished'
         if e['date'] > through and (e.get('state') or 'pre') != 'pre':
-            return False, f'games after {through} have already started'
+            return False, f'games after {us(through)} have already started'
     return True, ''
+
+
+def lag_reason(teams):
+    """Why a dashboard is partial because ESPN's season totals (ratings, leaders,
+    3P%) don't include every finished game yet, or None."""
+    n = sum(1 for t in teams or [] if t['gp'] < t['w'] + t['l'])
+    if not n:
+        return None
+    return (f"ESPN's season totals miss the latest game{'s' if n > 1 else ''} of {n} team{'s' if n > 1 else ''}, "
+            'so ratings, leaders and 3P% are behind the standings')
+
+
+def partial_reason(events, dash):
+    """None for a full refresh: every game of the latest game night is final, the
+    next night has not started and ESPN's totals include all of them. Otherwise a
+    short reason, shown on the start screen and next to the data (no scores)."""
+    reasons = []
+    ok, why = snapshot_allowed(events, dash.get('through'))
+    if not ok:
+        reasons.append(why)
+    lag = lag_reason(dash.get('teams'))
+    if lag:
+        reasons.append(lag)
+    return '; '.join(reasons) or None
+
+
+def snapshot_partial(dash):
+    """The partial reason of a saved day or live dashboard. Ones written before
+    the 'partial' field existed are judged by their season totals only."""
+    return dash['partial'] if 'partial' in dash else lag_reason(dash.get('teams'))
 
 
 def write_snapshot(dash):
@@ -617,12 +648,30 @@ def refresh(offline=False, log=print):
 
     dash['generated'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
     dash['requests'] = f.count
+    # Full or partial (see partial_reason), and when the last full refresh ran.
+    dash['partial'] = partial_reason(events, dash)
+    prev = read_json(DASHBOARD) or {}
+    if not dash['partial']:
+        dash['last_full'] = dash['generated']
+    elif 'last_full' in prev:
+        dash['last_full'] = prev['last_full']
+    else:
+        dash['last_full'] = prev.get('generated') if prev.get('teams') and not snapshot_partial(prev) else None
     write_json(DASHBOARD, dash)
     archive_odds_history(dash)
     ok, why = snapshot_allowed(events, dash['through'])
     if ok:
-        write_snapshot(dash)
-        log(f"saved snapshot for games through {dash['through']}")
+        # A partial save (ESPN totals behind) is better than none, but it never
+        # replaces a full one for the same day.
+        try:
+            old_partial = snapshot_partial(read_snapshot(dash['through']))
+        except (OSError, ValueError, EOFError):
+            old_partial = 'missing'
+        if dash['partial'] and not old_partial:
+            log(f"kept the full snapshot for {dash['through']} (this refresh is partial: {dash['partial']})")
+        else:
+            write_snapshot(dash)
+            log(f"saved {'partial ' if dash['partial'] else ''}snapshot for games through {dash['through']}")
     else:
         log(f'no snapshot saved: {why}')
     if not offline:

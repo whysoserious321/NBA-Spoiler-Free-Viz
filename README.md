@@ -98,7 +98,24 @@ The start screen lists each saved day by **when its refresh ran, in your own tim
 *Thu, Nov 12, 13:00*), with the US game date it covers underneath, so you can pick "what the app knew
 on Thursday morning" without converting time zones. Pick the last refresh before the first game you
 haven't watched. The header pill (*Live*, *As of Nov 12, 13:00* or *Demo data*) shows the current
-choice; tap it to change. Links between the dashboard and the 3P% page keep the choice, including
+choice; tap it to change.
+
+**Full or partial.** A refresh is *full* when every game of the latest game night is final, the next
+night hasn't started, and ESPN's season totals include all of those games. Anything else is
+*partial*: a refresh during a game night, or a morning when ESPN's totals still lag the scoreboard
+(standings and records are then up to date, but ratings, leaders and 3P% miss the latest game of some
+teams). The start screen only gives a plain time for full refreshes:
+
+- *Live* reads "last full refresh *Thu, Nov 12, 13:00*". When the live data is partial the option
+  is titled *Live (partial)*, gets an orange dot and an orange *Partial live* box that says when it
+  was updated and why it is partial, and still names the last full refresh. The header pill then
+  reads *Partial live* (orange) and the page footers repeat the reason.
+- A partial saved day is listed as *Partial · Nov 8, 14:39*, with the reason under the list; its
+  pill reads *As of Nov 8, 14:39 · partial*.
+
+The refresh stores this as `partial` (the reason, or null) and `last_full` (time of the last full
+refresh) in `dashboard.json` and each snapshot; files saved before these fields existed are judged by
+their season totals alone. Links between the dashboard and the 3P% page keep the choice, including
 the bottom tab bar on the 3P% page: with *Live* chosen there, tapping *Ratings*, *Leaders*, *MVP* or
 *Title* opens the live dashboard without asking again.
 
@@ -107,8 +124,9 @@ Rules that keep snapshots spoiler-safe:
 - A snapshot is only written when every game of that day is final and the next day's games have not
   started. A refresh in the middle of a game night does not write one.
 - A later refresh for the same day replaces it. That is how the hourly catch-up fixes a morning when
-  ESPN's season totals still lagged; if they never catch up before 14:00, that day's ratings miss
-  the last games for a few teams, and the team sheet says so. On such mornings the start screen shows
+  ESPN's season totals still lagged; if they never catch up before 14:00, that day stays *partial*:
+  its ratings miss the last games for a few teams, and the start screen and team sheet say so. A
+  partial refresh never replaces a full snapshot of the same day. On such mornings the start screen shows
   the time of the last catch-up (for example 13:00) rather than 08:00, because that is when the data
   you would see was fetched.
 - Days before you installed NBAViz cannot be recovered, because ESPN only offers season-to-date totals.
@@ -399,10 +417,11 @@ python3 demo.py                 # regenerate the demo data
 A background thread in the app refreshes once a day at `NBAVIZ_REFRESH_AT`:
 
 - a failed refresh is retried every 30 minutes until it works;
-- if ESPN's season totals don't include last night's games yet, it checks again every hour (until 14:00);
+- if the refresh is partial (ESPN's season totals don't include last night's games yet, or a game of
+  the night is still running), it checks again every hour (until 14:00);
 - after a restart it refreshes straight away if the data is older than the latest scheduled time.
   A restart does not resume the hourly catch-up, though: if the app is restarted on a morning when the
-  totals still lagged, it waits for the next day's run, so run `python3 scrape.py` by hand.
+  refresh was still partial, it waits for the next day's run, so run `python3 scrape.py` by hand.
 - until the last 5 earlier seasons' shot locations are cached, the morning refresh also fetches one of
   them at the end, which keeps it busy for about 25 more minutes (the data it serves is already updated).
 

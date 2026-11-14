@@ -58,11 +58,19 @@
   /* Query string for links to the other page, so it opens with the same choice. */
   function linkQuery(c) { return c.mode === 'live' ? '?live=1' : query(c); }
 
-  /* generated: when the shown data was refreshed; a dated choice then reads "As of Nov 12, 13:00". */
-  function pill(c, generated) {
+  /* generated: when the shown data was refreshed; a dated choice then reads "As of Nov 12, 13:00".
+     partial: why that refresh was only partial (null = full); the pill then says so. */
+  function pill(c, generated, partial) {
     if (c.mode === 'demo') return { text: 'Demo data', cls: 'demo' };
-    if (c.mode === 'date') return { text: generated ? 'As of ' + stamp(generated, true) : 'To ' + day(c.date), cls: 'date' };
-    return { text: 'Live', cls: 'live' };
+    if (c.mode === 'date') {
+      return { text: (generated ? 'As of ' + stamp(generated, true) : 'To ' + day(c.date)) + (partial ? ' · partial' : ''),
+        cls: 'date' + (partial ? ' partial' : '') };
+    }
+    return partial ? { text: 'Partial live', cls: 'live partial' } : { text: 'Live', cls: 'live' };
+  }
+  /* The sentence that goes next to partial data, e.g. in the page footers. */
+  function partialNote(partial) {
+    return partial ? 'Partial refresh: ' + partial + '.' : '';
   }
 
   /* Show the start screen; calls done(choice). opts.cancelable adds "Keep current";
@@ -96,15 +104,27 @@
       .then(function (r) { return r.json(); })
       .catch(function () { return { dates: [] }; })
       .then(function (info) {
-        var dates = info.dates || [], saved = info.saved || {};
-        // each saved day is labelled by when its refresh ran, in the viewer's own time
-        var label = function (d) { return stamp(saved[d]) || day(d, true); };
+        var dates = info.dates || [], saved = info.saved || {}, part = info.partial || {};
+        // each saved day is labelled by when its refresh ran, in the viewer's own time; a
+        // partial one (ESPN's totals still behind the results) says so
+        var label = function (d) { return part[d] ? 'Partial · ' + (stamp(saved[d], true) || day(d)) : stamp(saved[d]) || day(d, true); };
         var games = function (d) { return 'Includes games through ' + day(d, true) + ' (US date).'; };
+        var partNote = function (d) { return part[d] ? partialNote(part[d]) + ' A later full refresh replaces it.' : ''; };
+        // Live: only a full refresh gets "last full refresh <time>"; a partial one is marked as such
+        var liveSub, liveExtra = '';
+        if (info.live_partial) {
+          liveSub = 'Everything up to now' + (info.live_last_full ? ' · last full refresh ' + esc(stamp(info.live_last_full)) : '');
+          liveExtra = '<small class="gate-partial"><span class="gate-tag">Partial live</span> Updated ' + esc(stamp(info.live_generated)) + ', but ' +
+            esc(info.live_partial) + '. The next full refresh replaces it.</small>';
+        } else {
+          liveSub = 'Everything up to now' + (info.live_generated ? ' · last full refresh ' + esc(stamp(info.live_generated)) + ' (' + esc(zone()) + ')'
+            : info.live_through ? ', games through ' + esc(day(info.live_through, true)) : '');
+        }
         var pick = prev && prev.mode === 'date' && dates.indexOf(prev.date) >= 0 ? prev.date : dates[0];
         var was = prev ? prev.mode : null;
-        var opt = function (mode, title, sub, extra) {
+        var opt = function (mode, title, sub, extra, dot) {
           return '<div class="gate-opt' + (was === mode ? ' last' : '') + '">' +
-            '<span class="gate-dot ' + mode + '"></span><span class="gate-txt"><b>' + title + '</b><small>' + sub + '</small>' +
+            '<span class="gate-dot ' + (dot || mode) + '"></span><span class="gate-txt"><b>' + title + '</b><small>' + sub + '</small>' +
             (extra || '') + '</span></div>';
         };
         el.firstChild.innerHTML =
@@ -112,8 +132,7 @@
           '<p class="gate-sub">Behind on games? Pick the last refresh before the first game you haven’t watched; nothing after it ' +
           'will show, not even in the odds. All times are ' + esc(zone()) + ' (your device’s time zone).</p>' +
           '<button type="button" class="gate-btn" data-mode="live">' +
-          opt('live', 'Live', 'Everything up to now' + (info.live_generated ? ' · last refresh ' + esc(stamp(info.live_generated)) + ' (' + esc(zone()) + ')'
-            : info.live_through ? ', games through ' + esc(day(info.live_through, true)) : '')) +
+          opt('live', info.live_partial ? 'Live (partial)' : 'Live', liveSub, liveExtra, info.live_partial ? 'live partial' : 'live') +
           '</button>' +
           '<div class="gate-btn gate-dated">' +
           opt('date', 'Up to a date', 'What the app knew at the refresh of:',
@@ -122,7 +141,8 @@
                 dates.map(function (d, i) {
                   return '<option value="' + d + '"' + (d === pick ? ' selected' : '') + '>' + esc(label(d)) + '</option>';
                 }).join('') + '</select><button type="button" class="gate-go" data-mode="date">Show</button></span>' +
-                '<small class="gate-games" id="gate-games">' + esc(games(pick)) + '</small>'
+                '<small class="gate-games" id="gate-games">' + esc(games(pick)) + '</small>' +
+                '<small class="gate-partial" id="gate-day-partial"' + (part[pick] ? '' : ' hidden') + '>' + esc(partNote(pick)) + '</small>'
               : '<small class="gate-none">No saved days yet. Every morning’s refresh saves the night before.</small>') +
           '</div>' +
           '<button type="button" class="gate-btn" data-mode="demo">' + opt('demo', 'Demo', 'Made-up numbers and players') + '</button>' +
@@ -137,12 +157,17 @@
           else choose({ mode: mode });
         });
         var sel = el.querySelector('#gate-day');
-        if (sel) sel.addEventListener('change', function () { el.querySelector('#gate-games').textContent = games(sel.value); });
+        if (sel) sel.addEventListener('change', function () {
+          el.querySelector('#gate-games').textContent = games(sel.value);
+          var pn = el.querySelector('#gate-day-partial');
+          pn.textContent = partNote(sel.value);
+          pn.hidden = !part[sel.value];
+        });
         var first = el.querySelector(was === 'date' && dates.length ? '#gate-day' : '[data-mode="' + (was || 'live') + '"]') ||
           el.querySelector('[data-mode]');
         if (first) first.focus({ preventScroll: true });
       });
   }
 
-  window.NBAGate = { fromUrl: fromUrl, ask: ask, query: query, linkQuery: linkQuery, pill: pill, day: day, stamp: stamp, zone: zone };
+  window.NBAGate = { fromUrl: fromUrl, ask: ask, query: query, linkQuery: linkQuery, pill: pill, partialNote: partialNote, day: day, stamp: stamp, zone: zone };
 })();

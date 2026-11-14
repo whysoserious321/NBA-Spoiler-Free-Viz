@@ -283,7 +283,7 @@
   }
 
   function renderHeader() {
-    var d = S.data, pill = NBAGate.pill(S.choice, d.generated);
+    var d = S.data, pill = NBAGate.pill(S.choice, d.generated, d.partial);
     modePill.textContent = pill.text;
     modePill.className = 'mode-pill ' + pill.cls;
     modePill.hidden = false;
@@ -330,11 +330,12 @@
     ({ ratings: renderRatings, leaders: renderLeaders, mvp: renderMVP, title: renderTitle })[S.tab](v);
     // season and freshness live here, at the foot, so the top bar stays one slim row
     var d = S.data, through = d.through ? ' through ' + dateShort(new Date(d.through + 'T12:00:00')) : '';
+    var partial = S.choice.mode === 'demo' || !d.partial ? '' : '<span class="partial-note">' + esc(NBAGate.partialNote(d.partial)) + '</span> ';
     var credit = S.choice.mode === 'demo' ? 'Demo data: every number and player here is made up.'
       : S.choice.mode === 'date' ? esc(d.season) + ': as of the refresh on ' + (NBAGate.stamp(d.generated) ? NBAGate.stamp(d.generated) + ' (' + NBAGate.zone() + '), ' : '') +
-          'games through ' + NBAGate.day(S.choice.date, true) + ' (US date). Data: ESPN · Polymarket.'
+          'games through ' + NBAGate.day(S.choice.date, true) + ' (US date). ' + partial + 'Data: ESPN · Polymarket.'
         : esc(d.season) + ' season' + through + ', updated ' + (NBAGate.stamp(d.generated) ? NBAGate.stamp(d.generated) + ' (' + relTime(d.generated) + ')' : relTime(d.generated)) +
-          '.<br>Data: ESPN · Polymarket. Ratings computed by NBAViz.';
+          '.' + (partial ? ' ' + partial : '') + '<br>Data: ESPN · Polymarket. Ratings computed by NBAViz.';
     v.insertAdjacentHTML('beforeend', '<p class="credit">' + credit + ' <button type="button" data-act="gate">Change</button></p>');
     $$('.tabbar a').forEach(function (a) {
       if (a.getAttribute('data-tab') === S.tab) a.setAttribute('aria-current', 'page');
