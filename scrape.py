@@ -16,6 +16,10 @@ data/dashboard.json for the web app:
       - the play-by-play of every final game, once per game, reduced to shot
         locations for the hot zones on /threes (shots.py; about 10 requests a
         day, plus one earlier season per day until the last 5 are cached)
+      - the league-wide injury report (1 request) for the injury marker on the
+        ladder and standings, plus last season's minutes and points per player
+        (once per season, cached in data/cache/prev_roles_<year>.json) to judge
+        the role of players who have hardly played this season
   * Polymarket (Gamma + CLOB, read-only): championship and MVP markets plus
     their price history.
 
@@ -232,6 +236,52 @@ def fetch_day(f, d, teams):
     out = {'date': d.isoformat(), 'complete': complete, 'events': events}
     write_json(path, out)
     return out
+
+
+def fetch_injuries(f):
+    """ESPN's league-wide injury report (one request). Only who, the status, the
+    body part and ESPN's expected return date are kept. The report's comments
+    and notes often describe what happened in a game, so they are never stored
+    (spoilers). status: 'out', 'susp' (suspended) or 'dtd' (day-to-day and
+    other short-term labels)."""
+    d = f.get(f'{ESPN}/injuries')
+    at = d.get('timestamp') or datetime.now(timezone.utc).isoformat(timespec='seconds')
+    try:
+        day = datetime.fromisoformat(at.replace('Z', '+00:00')).astimezone(US_EAST).date().isoformat()
+    except ValueError:
+        day = datetime.now(US_EAST).date().isoformat()
+    rows = []
+    for team in d.get('injuries') or []:
+        for r in team.get('injuries') or []:
+            a = r.get('athlete') or {}
+            m = re.search(r'/id/(\d+)', ' '.join(str(l.get('href') or '') for l in a.get('links') or []))
+            abbr = nba_abbr((a.get('team') or {}).get('abbreviation') or '')
+            if not m or not abbr:
+                continue
+            status = (r.get('status') or '').lower()
+            det = r.get('details') or {}
+            rows.append({
+                'id': m.group(1), 'name': a.get('displayName'), 'short': a.get('shortName'), 'team': abbr,
+                'status': 'out' if status == 'out' else 'susp' if status.startswith('suspen') else 'dtd',
+                'part': det.get('type'), 'ret': (det.get('returnDate') or '')[:10] or None,
+            })
+    return {'at': at, 'day': day, 'players': rows}
+
+
+def prev_roles(f, end_year, log=print):
+    """Last season's {player id: [games, minutes, points per game]}, to judge the
+    role of injured players who have hardly played this season. A finished season
+    never changes, so it is fetched once (one request) and cached. f=None: cache only."""
+    yr = end_year - 1
+    path = os.path.join(CACHE_DIR, f'prev_roles_{yr}.json')
+    roles = read_json(path)
+    if roles is None and f is not None:
+        roles = {p['id']: [p['gp'], round(p['mpg'], 1), round(p['pts'], 1)]
+                 for p in fetch_players(f, yr, qualified=False) if p['id'] and p['gp'] > 0}
+        if roles:
+            write_json(path, roles)
+            log(f'injuries: saved {yr - 1}-{str(yr)[2:]} player roles ({len(roles)} players)')
+    return roles or {}
 
 
 def _float(v):
@@ -528,11 +578,22 @@ def refresh(offline=False, log=print):
             except requests.RequestException as e:
                 log(f'polymarket {slug} failed: {e}')
                 season['odds'][key] = (old.get('odds') or {}).get(key)
+        try:
+            season['injuries'] = fetch_injuries(f)
+        except (requests.RequestException, ValueError, TypeError, AttributeError) as e:
+            log(f'injury report failed (keeping the previous one): {e}')
+            season['injuries'] = old.get('injuries')
         write_json(cache, season)
         write_json(os.path.join(CACHE_DIR, 'teams.json'), teams)
         cache_team_logos(f, teams)
 
-    dash = model.build(games, teams, season, label=season_label(end_year), norm_name=norm_name)
+    try:
+        roles = prev_roles(None if offline else f, end_year, log=log)
+    except (requests.RequestException, ValueError, TypeError, KeyError) as e:
+        log(f"last season's player roles failed (injury marker uses this season only): {e}")
+        roles = {}
+    dash = model.build(games, teams, season, label=season_label(end_year), norm_name=norm_name,
+                       prev_roles=roles)
     if not dash['teams']:
         # Before the first regular-season game (e.g. after the season rolls over in
         # August) there is nothing to rate: keep serving the existing data.

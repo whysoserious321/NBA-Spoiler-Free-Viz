@@ -129,6 +129,7 @@
   /* ------------------------------------------------------------- tooltip */
 
   function showTip(html, x, y) {
+    injOpen = null;
     tip.innerHTML = html;
     tip.hidden = false;
     var r = tip.getBoundingClientRect();
@@ -138,7 +139,7 @@
     tip.style.left = left + 'px';
     tip.style.top = top + 'px';
   }
-  function hideTip() { tip.hidden = true; }
+  function hideTip() { tip.hidden = true; injOpen = null; }
   window.addEventListener('scroll', hideTip, { passive: true });
 
   /* --------------------------------------------------------------- sheet */
@@ -346,6 +347,8 @@
     if (act) { changeData(); return; }
     var hideOut = e.target.closest('[data-hide-out]');
     if (hideOut) return toggleHideOut(hideOut);
+    var inj = e.target.closest('[data-inj]');       // the plus on a row: its own tip, not the team sheet
+    if (inj) return showInj(inj);
     var more = e.target.closest('[data-od-more]');
     if (more) { var k = more.getAttribute('data-od-more'); S.odAll[k] = !S.odAll[k]; drawOD(); return; }
     var segBtn = e.target.closest('.seg button');
@@ -447,7 +450,7 @@
     if (!body) return;
     if (top10) top10.hidden = S.view !== 'diamond' || !hasSeeds();
     if (S.view === 'ladder') {
-      key.innerHTML = ladderLegend() + cpHelp();
+      key.innerHTML = ladderLegend() + cpHelp() + injHelp();
       body.innerHTML = ladderHTML();
       updateLadder(false);
       foot.innerHTML = 'Sorted by the selected rating. Ring = raw, dot = adjusted; a <b>green</b> link means a tougher-than-average schedule, so adjusting raised the rating. ' +
@@ -503,6 +506,65 @@
       (earlySeason() ? ' Early season: seeds, ranks and win pace still move a lot.' : '') + '</p>';
   }
 
+  /* Injury marker: a red plus on the team logo (ladder + standings) when one of the
+     team's core players is out for a long stretch. The rule lives in model.py
+     (INJ_*: top 3 in points or minutes, out or suspended, back 10+ days after the
+     report or 5+ games missed); keep injHelp() in step with it. Tapping the plus
+     lists the players; the team sheet lists them too. */
+  function injured(t) { return t && t.inj && t.inj.length ? t.inj : null; }
+  function injBadge(abbr) {
+    return '<span class="inj-ic' + (abbr ? '" data-inj="' + abbr + '"' : ' solo"') + ' aria-hidden="true">' +
+      '<svg viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></svg></span>';
+  }
+  function injLogo(t) {
+    return injured(t) ? '<span class="lg-inj">' + logo(t.abbr) + injBadge(t.abbr) + '</span>' : logo(t.abbr);
+  }
+  function injStatus(p) {
+    return p.status === 'susp' ? 'Suspended' : 'Out' + (p.part ? ' · ' + p.part : '');
+  }
+  function injBack(p) {
+    return p.ret ? 'back ~' + dateShort(new Date(p.ret + 'T12:00:00')) : '';
+  }
+  // "missed 8 of 12 games · back ~Nov 24": the parts that are known
+  function injSub(p) {
+    return [p.missed ? 'missed ' + p.missed + ' of ' + p.of + ' games' : '', injBack(p)].filter(Boolean).join(' · ');
+  }
+  function injPpg(p) { return p.ppg.toFixed(1) + ' ppg' + (p.basis === 'prev' ? ' last season' : ''); }
+  // for the rows' aria-labels: ", core player out: Avery Ashby, out, knee"
+  function injLabel(t) {
+    var ps = injured(t);
+    return ps ? ', core player' + (ps.length > 1 ? 's' : '') + ' out: ' +
+      ps.map(function (p) { return p.name + ', ' + injStatus(p).toLowerCase().replace(' · ', ', '); }).join('; ') : '';
+  }
+  function injAsOf() {
+    var at = S.data.injuries_at;
+    return at ? 'ESPN injury report as of ' + (NBAGate.stamp(at) || dateShort(new Date(at))) + ' (' + NBAGate.zone() + ')' : '';
+  }
+  var injOpen = null;      // abbr of the team whose injury tip is showing
+  function showInj(el) {
+    var abbr = el.getAttribute('data-inj'), t = S.teams[abbr];
+    if (injOpen === abbr) { hideTip(); return; }
+    if (!injured(t)) return;
+    var r = el.getBoundingClientRect();
+    showTip('<span class="inj-tip-h">' + esc(t.nick || t.name) + ': core player' + (t.inj.length > 1 ? 's' : '') + ' out</span>' +
+      t.inj.map(function (p) {
+        return '<span class="inj-tip-p"><b>' + esc(p.name) + '</b> ' + esc(injStatus(p)) + '<br>' +
+          esc([injPpg(p), injSub(p)].filter(Boolean).join(' · ')) + '</span>';
+      }).join(''), r.left + r.width / 2, r.top);
+    injOpen = abbr;
+  }
+  document.addEventListener('click', function (e) {
+    if (injOpen && !e.target.closest('[data-inj]')) hideTip();
+  });
+  function injHelp() {
+    var asOf = injAsOf();
+    return '<p class="foot">' + injBadge() + ' <b>Core player out</b>: one of the team’s top 3 in points or minutes per game ' +
+      'is out for a long stretch: ruled out or suspended, and ESPN expects them back 10 or more days after the report, ' +
+      'or they have already missed 5 or more games. Day-to-day players and short absences don’t count. ' +
+      'Tap the plus to see who. ' + (asOf ? asOf + '.' : S.choice.mode === 'date' ? 'Injuries were not saved for this day.'
+        : 'The injury report is not loaded yet.') + '</p>';
+  }
+
   /* Standings under the ladder: one card per conference (following the filter),
      ordered by seed, with games behind the leader and the 82-game win pace. */
   function drawStandings() {
@@ -528,8 +590,8 @@
       html += '<button type="button" class="st-row' + (cp ? ' cp' + cp : '') + '" data-team="' + t.abbr + '" aria-label="' +
         esc(t.name + ', ' + (t.seed ? ordinal(t.seed) + ' in the ' + conf + ', ' : '') + t.w + ' wins, ' + t.l + ' losses, ' +
           (gbTxt === '–' ? '' : gbTxt + ' games behind, ') + (pace != null ? 'on pace for ' + pace + ' wins' : '') +
-          (cp ? ', ' + cpText(t) : '')) + '"' + (cp ? ' title="' + esc(cpText(t)) + '"' : '') + '>' +
-        '<span class="st-seed">' + (t.seed || '–') + '</span>' + logo(t.abbr) +
+          (cp ? ', ' + cpText(t) : '') + injLabel(t)) + '"' + (cp ? ' title="' + esc(cpText(t)) + '"' : '') + '>' +
+        '<span class="st-seed">' + (t.seed || '–') + '</span>' + injLogo(t) +
         '<b class="st-abbr">' + t.abbr + cpIcon(cp) + '</b>' +
         '<span>' + t.w + '</span><span>' + t.l + '</span><span>' + gbTxt + '</span>' +
         '<span class="st-pace">' + (pace != null ? pace : '–') + '</span>' +
@@ -545,7 +607,7 @@
         '82-game season at the current winning percentage (wins ÷ games × 82), so it swings a lot early on. ' +
         'Seeds 1–6 go straight to the playoffs, 7–10 to the play-in. Ties are broken by the record between the tied teams, then ' +
         'conference record, then point differential; the NBA also uses division standings, so a rare tie can differ from the official seed. ' +
-        'On wider screens: Home, Away and Conf records, the last 10 games and the current streak. Tap a team for details.</p>' + cpHelp()) : '') +
+        'On wider screens: Home, Away and Conf records, the last 10 games and the current streak. Tap a team for details.</p>' + cpHelp() + injHelp()) : '') +
       '</section>';
   }
 
@@ -559,7 +621,8 @@
     return '<div class="legend" aria-hidden="true"><span><i class="lg-dot"></i>Adjusted</span><span><i class="lg-ring"></i>Raw</span>' +
       '<span><i class="lg-line" style="background:var(--up-mark)"></i>adj. higher</span>' +
       '<span><i class="lg-line" style="background:var(--muted);opacity:.6"></i>adj. lower</span>' +
-      '<span>' + cpIcon(2) + 'all 5 champion marks</span><span>' + cpIcon(1) + '4 of 5</span></div>';
+      '<span>' + cpIcon(2) + 'all 5 champion marks</span><span>' + cpIcon(1) + '4 of 5</span>' +
+      '<span>' + injBadge() + 'core player out</span></div>';
   }
   function ladderHTML() {
     var ext = ladderExtent();
@@ -575,7 +638,7 @@
     var rows = sortedTeams().map(function (t) {
       var a = t.nrtg_a, r = t.nrtg, lo = Math.min(a, r), hi = Math.max(a, r);
       return '<button type="button" class="lrow" data-team="' + t.abbr + '" data-conf="' + t.conf + '">' +
-        '<span class="lrank"></span>' + logo(t.abbr) +
+        '<span class="lrank"></span>' + injLogo(t) +
         '<span class="lname"><b>' + t.abbr + '</b><small>' + t.w + '–' + t.l + '<span class="cp"></span></small></span>' +
         '<span class="track">' + grid +
         '<span class="conn' + (a > r ? ' up' : '') + '" style="left:' + x(lo) + '%;width:' + (x(hi) - x(lo)).toFixed(2) + '%"></span>' +
@@ -614,7 +677,7 @@
       $('.cp', r).innerHTML = cpIcon(cp);
       if (cp) r.setAttribute('title', cpText(t)); else r.removeAttribute('title');
       r.setAttribute('aria-label', t.name + ', ' + (S.mode === 'adj' ? 'adjusted' : 'raw') + ' net rating ' + sign(rv(t, 'nrtg')) +
-        ', offense ' + rv(t, 'ortg').toFixed(1) + ', defense ' + rv(t, 'drtg').toFixed(1) + (cp ? ', ' + cpText(t) : ''));
+        ', offense ' + rv(t, 'ortg').toFixed(1) + ', defense ' + rv(t, 'drtg').toFixed(1) + (cp ? ', ' + cpText(t) : '') + injLabel(t));
     });
     if (!animate) return;
     rows.forEach(function (r) {
@@ -1443,11 +1506,28 @@
       '<div class="tile"><span>Points</span><b>' + t.ppg.toFixed(1) + '</b><small>allow ' + t.oppg.toFixed(1) + '</small></div></div>' +
       '<p class="foot sh-cp">' + cpIcon(profile(t)) + '<b>Champion profile</b>: ' + esc(cpText(t, true)) +
         ' (' + (S.mode === 'adj' ? 'adjusted' : 'raw') + ' ranks).</p>' +
+      injSheet(t) +
       (t.gp < t.w + t.l ? '<p class="foot">Ratings cover ' + t.gp + ' of ' + (t.w + t.l) + ' games; ESPN’s season totals catch up a few hours after games end.</p>' : '') +
       help('team', '<p class="foot">Schedule = average adjusted net rating of the opponents faced so far. Ratings per 100 possessions; ' +
         'lower defense is better. Adjusted takes out the strength of the opponents faced.</p>') +
       threeChart(t);
     openSheet(html);
+  }
+
+  // team sheet: the injured core players, tappable when they have played this season
+  function injSheet(t) {
+    var ps = injured(t);
+    if (!ps) return '';
+    return '<div class="section-t"><span>' + injBadge() + 'Core player' + (ps.length > 1 ? 's' : '') + ' out</span></div>' +
+      '<div class="bars">' + ps.map(function (p) {
+        var known = !!S.players[p.id], tag = known ? 'button' : 'div';
+        return '<' + tag + (known ? ' type="button" data-player="' + esc(p.id) + '"' : '') + ' class="bar-row inj-row">' +
+          (known ? playerHead(p.id, 36) : headHTML(p.name, null, t.abbr, 36)) +
+          '<span class="bar-main"><span class="bar-name">' + esc(p.name) + '<small>' + esc(injStatus(p)) + '</small></span>' +
+          '<span class="bar-sub">' + esc(injSub(p) || ' ') + '</span></span>' +
+          '<span class="bar-val"><b>' + p.ppg.toFixed(1) + '</b><small>' + (p.basis === 'prev' ? 'ppg last season' : 'ppg') + '</small></span></' + tag + '>';
+      }).join('') + '</div>' +
+      '<p class="foot">' + esc(injAsOf() || 'ESPN injury report') + '. Return dates are ESPN’s estimate.</p>';
   }
 
   function threeChart(t) {

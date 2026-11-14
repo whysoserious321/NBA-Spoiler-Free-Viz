@@ -20,6 +20,7 @@ DRtg/A = lg + d_i: what the team would post against a league-average schedule.
 
 import json
 from collections import defaultdict
+from datetime import date
 
 import numpy as np
 
@@ -38,6 +39,17 @@ LEADER_STATS = [
 ]
 TS_MIN_FGA = 10        # TS% leaderboard: at least this many field-goal attempts per game
 HEADS_PER_STAT = 10
+
+# Injury marker: a team is marked when one of its core players (top INJ_TOP on the
+# team in points or minutes per game) is out for a long stretch: ruled out or
+# suspended, and either ESPN expects the player back INJ_MIN_DAYS or more days after
+# the report, or the player has already missed INJ_MIN_MISSED or more of the team's games.
+# Day-to-day players and short absences don't count.
+INJ_TOP = 3
+INJ_MIN_DAYS = 10
+INJ_MIN_MISSED = 5
+INJ_MIN_GP_NOW = 5     # fewer games this season: judge the role by last season instead
+INJ_MIN_GP_PREV = 10
 
 
 def _poss(fga, fta, orb, opp_drb, fgm, tov):
@@ -141,7 +153,56 @@ def _team_for(name, teams):
     return best
 
 
-def build(games, teams_meta, season, label, norm_name):
+def core_injuries(report, players, rosters, team_games, prev):
+    """{team: [core players out for a long stretch]} for the injury marker (see INJ_*).
+
+    report: scrape.fetch_injuries(); players: this season's players by id;
+    rosters: team -> ids of its players with games this season; team_games:
+    team -> games played; prev: last season's {id: [gp, mpg, ppg]}."""
+    out = defaultdict(list)
+    if not report:
+        return out
+    try:
+        ref = date.fromisoformat(report.get('day') or '')
+    except ValueError:
+        ref = None
+    for r in report.get('players') or []:
+        pid, abbr = r.get('id'), r.get('team')
+        if r.get('status') not in ('out', 'susp') or not pid or abbr not in rosters:
+            continue
+        now, last = players.get(pid), prev.get(pid)
+        if now and now['gp'] >= INJ_MIN_GP_NOW:
+            mpg, ppg, basis = now['mpg'], now['pts'], 'now'
+        elif last and last[0] >= INJ_MIN_GP_PREV:
+            mpg, ppg, basis = last[1], last[2], 'prev'
+        elif now and now['gp'] > 0:
+            mpg, ppg, basis = now['mpg'], now['pts'], 'now'
+        else:
+            continue
+        mates = [players[q] for q in rosters[abbr] if q != pid]
+        rank_min = 1 + sum(1 for q in mates if q['mpg'] > mpg)
+        rank_pts = 1 + sum(1 for q in mates if q['pts'] > ppg)
+        if min(rank_min, rank_pts) > INJ_TOP:
+            continue
+        of = team_games.get(abbr, 0)
+        missed = max(0, of - (now['gp'] if now else 0))
+        try:
+            days = (date.fromisoformat(r['ret']) - ref).days if r.get('ret') and ref else None
+        except ValueError:
+            days = None
+        if not ((days is not None and days >= INJ_MIN_DAYS) or missed >= INJ_MIN_MISSED):
+            continue
+        out[abbr].append({
+            'id': pid, 'name': r.get('name'), 'short': r.get('short'), 'status': r['status'],
+            'part': r.get('part'), 'ret': r.get('ret'), 'missed': missed, 'of': of,
+            'ppg': round(ppg, 1), 'mpg': round(mpg, 1), 'basis': basis,
+        })
+    for rows in out.values():
+        rows.sort(key=lambda p: -p['ppg'])
+    return out
+
+
+def build(games, teams_meta, season, label, norm_name, prev_roles=None):
     totals = season.get('totals') or {}
     players_raw = season.get('players') or []
     qualified = set(season.get('qualified') or [])
@@ -238,6 +299,9 @@ def build(games, teams_meta, season, label, norm_name):
             rosters[p['team']].append(p['id'])
     for abbr in rosters:
         rosters[abbr].sort(key=lambda pid: (-players[pid]['tpa'], -players[pid]['mpg']))
+    report = season.get('injuries')
+    injured = core_injuries(report, players, rosters, {t: wins[t] + losses[t] for t in played},
+                            prev_roles or {})
 
     mvp = odds.get('mvp') or {}
     for o in mvp.get('outcomes', []):
@@ -287,12 +351,14 @@ def build(games, teams_meta, season, label, norm_name):
             'rk': {k: v[abbr] for k, v in ranks.items()},
             'title': round(t_odds['prob'], 4) if t_odds else None,
             'roster': rosters.get(abbr, []),
+            'inj': injured.get(abbr, []),
         })
 
     return {
         'season': label,
         'through': through,
         'n_games': len(games),
+        'injuries_at': (report or {}).get('at'),
         'league': {'rtg': round(lg, 2), 'tp': round(100 * league_tpm / league_tpa, 1) if league_tpa else None,
                    'pace': round(float(np.mean(list(pace.values()))), 1) if pace else None},
         'teams': team_rows,

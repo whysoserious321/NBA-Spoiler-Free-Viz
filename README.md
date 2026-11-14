@@ -16,8 +16,8 @@ locations behind the hot zones (a few more on mornings when ESPN is slow to upda
 <p align="center">
   <img src="docs/screenshots/start.png" width="200" alt="Start screen: live, up to a date, or demo">
   <img src="docs/screenshots/diamond.png" width="200" alt="Net rating diamond with playoff-picture rings">
-  <img src="docs/screenshots/ladder.png" width="200" alt="Net rating ladder with champion-profile trophies">
-  <img src="docs/screenshots/team.png" width="200" alt="Team sheet with champion profile and 3P% chart">
+  <img src="docs/screenshots/ladder.png" width="200" alt="Net rating ladder with champion-profile trophies and injury markers">
+  <img src="docs/screenshots/team.png" width="200" alt="Team sheet with champion profile, injured core player and 3P% chart">
 </p>
 <p align="center">
   <img src="docs/screenshots/threes.png" width="200" alt="Spoiler-free 3-point page with season and career 3P%">
@@ -32,7 +32,7 @@ locations behind the hot zones (a few more on mornings when ESPN is slow to upda
 
 - **Live, or up to a date.** Every page load starts with a short question: *Live*, *Up to a date*, or
   *Demo*. Saved days are listed by the time of their refresh in your own time zone; pick the last one
-  before the games you haven't watched and the whole app (ratings, records, leaders, odds,
+  before the games you haven't watched and the whole app (ratings, records, leaders, injuries, odds,
   odds trends and the 3P% page) shows only what was known then. The start screen
   also links straight to the spoiler-free 3P% page. See [Live or up to a date](#live-or-up-to-a-date).
 - **Net rating diamond.** Offensive vs. defensive rating rotated 45° so that *height is net rating*
@@ -55,8 +55,12 @@ locations behind the hot zones (a few more on mornings when ESPN is slow to upda
   nearly every recent champion had: top-3 seed, top-5 net rating, top-10 defense, top-10 offense and a
   52+ win pace (filled, with a gold row, for all five; an outline trophy and a dashed gold outline for four of five).
   The team sheet says which marks a team misses. See [Standings and champion profile](#standings-and-champion-profile).
+- **Injured core players.** In the ladder and the standings, a red plus on a team's logo means one of
+  its core players (top 3 on the team in points or minutes) is out for a long stretch, which can explain
+  a slump. Tap the plus to see who, how many games they have missed and when ESPN expects them back.
+  Day-to-day players and short absences don't count. See [Injured core players](#injured-core-players).
 - **Team sheet.** Record and conference seed; offense, defense and net rating (adjusted and raw, with league ranks), strength of
-  schedule, pace, which champion marks the team has, and a compact 3P% chart for every player on the roster.
+  schedule, pace, which champion marks the team has, its injured core players, and a compact 3P% chart for every player on the roster.
 - **Spoiler-free 3P% page** (`/threes`). Pick one or two teams, or tap one of today's matchups, and see
   each player's season 3P% next to their career 3P% (shaded green or red when this season is above or
   below it), best shooters first, on a scale zoomed to where most shooters are. See
@@ -221,6 +225,29 @@ The same key is in the app: tap *How to read this* under the diamond.
 - Net, offense and defense ranks are league-wide (of 30) and follow the Raw / Adjusted switch; the
   win-pace mark uses the exact winning percentage, not the rounded column.
 - It is a historical pattern, not a probability. The market's title odds are on the *Title* tab.
+
+### Injured core players
+
+<p align="center">
+  <img src="docs/screenshots/injuries.png" width="200" alt="Ladder with an injury plus tapped: the team's core players out, games missed and expected return">
+</p>
+
+- A **red plus** on a team's logo, in the ladder and in the standings, means a core player is out for a
+  long stretch. Tap the plus for the players: status and body part, points per game, games missed and
+  ESPN's expected return date. The team sheet lists them too, with their player cards a tap away.
+- **Core player** = top 3 on the team in points **or** minutes per game. For a player with fewer than 5
+  games this season (often a star who has been out since the summer), last season's numbers decide,
+  if they played at least 10 games then.
+- **Long stretch** = ruled out or suspended, **and** either ESPN expects them back 10 or more days after
+  the report (about 5 games) or they have already missed 5 or more of the team's games this season.
+  Day-to-day players and 2–3 game knocks don't count. The thresholds are the `INJ_*` constants in
+  `model.py`.
+- The source is ESPN's league-wide injury report, fetched with each morning's refresh. Only the name,
+  status, body part and expected return are kept: the report's comments often describe what happened
+  in a game, so they are never stored.
+- A saved day carries the injuries as of that morning's refresh, so *Up to a date* shows who was out
+  then. Days saved before this feature have no injury data; the reading notes say so.
+- The 3P% page and its API never receive injury data.
 
 ### The 3P% page
 
@@ -426,6 +453,8 @@ WantedBy=multi-user.target
 | Team season totals incl. opponent totals | ESPN `statistics/byteam` | 1 |
 | Results, to know who played whom | ESPN scoreboard, one per day; finished days are cached forever | 1–2 |
 | Player per-game stats | ESPN `statistics/byathlete` (all players and qualified players) | 2 |
+| Injury report, for the injury marker | ESPN `injuries` (league-wide; comments are never stored) | 1 |
+| Last season's minutes and points, to judge injured players' roles | ESPN `statistics/byathlete` for the previous season, cached in `data/cache/prev_roles_<year>.json` | 0 (1 once per season) |
 | Past seasons' 3PM/3PA, for career 3P% | ESPN `statistics/byathlete` per earlier season, cached forever | 0 (about 20 once) |
 | Shot locations, for the hot zones | ESPN game `summary` (play-by-play), once per finished game, cached forever | ~10 (one per new game) |
 | Earlier seasons' shot locations, for career hot zones | ESPN scoreboard per month, then every game's `summary` | ~1,240, one season per day until the last 5 are cached |

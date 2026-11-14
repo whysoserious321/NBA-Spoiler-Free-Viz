@@ -28,6 +28,8 @@
   --champ: #8f6a00;          /* champion profile: trophy outline */
   --champ-fill: #f0bd1a;     /* ... filled trophy */
   --champ-wash: rgba(240, 189, 26, .14);   /* ... row highlight: all five marks */
+  --inj: #d92c2c;            /* injury marker: core player out (red plus) */
+  --inj-on: #ffffff;
   --hot-rgb: 12, 163, 12;    /* career 3P% shade: this season better ... */
   --cold-rgb: 227, 73, 72;   /* ... or worse */
   --hz-hot-rgb: 214, 48, 42;   /* hot zones (NBA 2K style): red = better than the league */
@@ -63,6 +65,7 @@
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
     --tier-po: #22c088; --tier-pi: #eda100; --tier-on: #111110;
     --champ: #f2c94c; --champ-fill: #f2c94c; --champ-wash: rgba(242, 201, 76, .12);
+    --inj: #ef5050; --inj-on: #ffffff;
     --hot-rgb: 34, 192, 136; --cold-rgb: 230, 103, 103;
     --hz-hot-rgb: 240, 84, 70; --hz-cold-rgb: 74, 140, 240; --hz-avg: #3b3b38;
     --shadow: none;
@@ -78,6 +81,7 @@
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
   --tier-po: #22c088; --tier-pi: #eda100; --tier-on: #111110;
   --champ: #f2c94c; --champ-fill: #f2c94c; --champ-wash: rgba(242, 201, 76, .12);
+  --inj: #ef5050; --inj-on: #ffffff;
   --hot-rgb: 34, 192, 136; --cold-rgb: 230, 103, 103;
   --hz-hot-rgb: 240, 84, 70; --hz-cold-rgb: 74, 140, 240; --hz-avg: #3b3b38;
   --shadow: none; --sheet-shadow: 0 -8px 40px rgba(0,0,0,.6);
@@ -326,6 +330,20 @@ main {
   content: ''; position: absolute; inset: 1px; border: 1.5px dashed var(--champ); border-radius: inherit;
   opacity: .8; pointer-events: none;
 }
+/* injury marker (ladder + standings): a red plus badge on the team logo; tap it for who */
+.lg-inj { position: relative; display: inline-flex; }
+.inj-ic { display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 13px; height: 13px; border-radius: 50%; vertical-align: -2px;
+  background: var(--inj); box-shadow: 0 0 0 1.5px var(--surface); }
+.inj-ic svg { width: 9px; height: 9px; fill: none; stroke: var(--inj-on); stroke-width: 2.8; stroke-linecap: round; }
+.lg-inj .inj-ic { position: absolute; top: -5px; right: -3px; cursor: pointer; }
+.lg-inj .inj-ic::after { content: ''; position: absolute; inset: -9px; }   /* a finger-sized tap area */
+.legend .inj-ic, .foot .inj-ic, .section-t .inj-ic { margin: 0 5px 0 0; }
+.inj-tip-h { display: block; font-weight: 700; }
+.inj-tip-p { display: block; margin-top: 5px; }
+.inj-row { cursor: default; }
+button.inj-row { cursor: pointer; }
+.inj-row .bar-val small { display: block; font-size: 10.5px; color: var(--muted); margin-top: 2px; white-space: nowrap; }
 .cp-list { margin: 6px 0 0; padding-left: 18px; }
 .cp-list li { margin: 2px 0; }
 .l-cut { height: 1px; background: var(--grid); margin: 4px 0; }

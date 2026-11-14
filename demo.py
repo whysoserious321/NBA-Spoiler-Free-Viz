@@ -11,7 +11,7 @@ every player is invented.
 import math
 import os
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import model
 import scrape
@@ -206,6 +206,24 @@ def build(seed=11):
                                    diff={t['abbr']: t['nrtg'] for t in team_rows})
     for t in team_rows:
         t['seed'] = seeds.get(t['abbr'])
+    # made-up long-term injuries for the injury marker: core players on six teams
+    # (two on the first, a suspension on the last). Own random stream, so every
+    # number above stays as it was.
+    ir = random.Random(seed + 2000)
+    today = datetime.now(scrape.US_EAST).date()
+    for t in team_rows:
+        t['inj'] = []
+    for i, t in enumerate(ir.sample(team_rows, 6)):
+        top = sorted(t['roster'], key=lambda q: -players[q]['pts'])[:model.INJ_TOP]
+        susp = i == 5
+        for pid in sorted(ir.sample(top, 2 if i == 0 else 1), key=lambda q: -players[q]['pts']):
+            p = players[pid]
+            t['inj'].append({
+                'id': pid, 'name': p['name'], 'short': p['short'], 'status': 'susp' if susp else 'out',
+                'part': None if susp else ir.choice(['Knee', 'Ankle', 'Hamstring', 'Foot', 'Back', 'Calf', 'Wrist']),
+                'ret': (today + timedelta(days=ir.randint(12, 45))).isoformat(),
+                'missed': max(0, t['gp'] - p['gp']), 'of': t['gp'], 'ppg': p['pts'], 'mpg': p['mpg'], 'basis': 'now',
+            })
     all_tpm = sum(p['tpm'] for p in players.values())
     all_tpa = sum(p['tpa'] for p in players.values())
     return {
@@ -222,6 +240,7 @@ def build(seed=11):
                     'total_price': 1.04, 'outcomes': mvp_out},
         },
         'generated': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+        'injuries_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
         'requests': 0,
     }
 
